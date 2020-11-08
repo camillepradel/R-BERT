@@ -1,6 +1,7 @@
 import logging
 import os
 import random
+import fileinput
 
 import numpy as np
 import torch
@@ -17,7 +18,18 @@ def get_label(args):
 
 def load_tokenizer(args):
     tokenizer = BertTokenizer.from_pretrained(args.model_name_or_path)
-    tokenizer.add_special_tokens({"additional_special_tokens": ADDITIONAL_SPECIAL_TOKENS})
+    if not os.path.exists(args.model_dir):
+        os.makedirs(args.model_dir)
+    tokenizer.save_pretrained(args.model_dir)
+    with fileinput.FileInput(os.path.join(args.model_dir, 'vocab.txt'), inplace=True) as file:
+        for line in file:
+            line = line.replace('[unused1]', ADDITIONAL_SPECIAL_TOKENS[0])
+            line = line.replace('[unused2]', ADDITIONAL_SPECIAL_TOKENS[1])
+            line = line.replace('[unused3]', ADDITIONAL_SPECIAL_TOKENS[2])
+            line = line.replace('[unused4]', ADDITIONAL_SPECIAL_TOKENS[3])
+            print(line, end='')
+    tokenizer = BertTokenizer.from_pretrained(
+        args.model_dir, additional_special_tokens=ADDITIONAL_SPECIAL_TOKENS)
     return tokenizer
 
 

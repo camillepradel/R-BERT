@@ -13,6 +13,7 @@ from utils import compute_metrics, get_label, write_prediction
 logger = logging.getLogger(__name__)
 
 
+# TODO: replace with transformers.Trainer class
 class Trainer(object):
     def __init__(self, args, train_dataset=None, dev_dataset=None, test_dataset=None):
         self.args = args
@@ -34,6 +35,7 @@ class Trainer(object):
 
         # GPU or CPU
         self.device = "cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu"
+        logger.info(f'device: {self.device}')
         self.model.to(self.device)
 
     def train(self):
