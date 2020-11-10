@@ -25,8 +25,12 @@ class RBERT(BertPreTrainedModel):
 
         self.num_labels = config.num_labels
 
+        e_to_e_size = config.num_hidden_layers * config.num_attention_heads
+
+        self.e1_to_e2_fc_layer = FCLayer(e_to_e_size, e_to_e_size, args.dropout_rate)
+        self.e2_to_e1_fc_layer = FCLayer(e_to_e_size, e_to_e_size, args.dropout_rate)
         self.label_classifier = FCLayer(
-            config.num_hidden_layers*config.num_attention_heads*2,
+            e_to_e_size*2,
             config.num_labels,
             args.dropout_rate,
             use_activation=False,
@@ -122,12 +126,14 @@ class RBERT(BertPreTrainedModel):
         e1_to_e2_attentions = e1_to_e2_attentions.permute(1, 0, 2) # batch_size, layers_count, heads_count
         e2_to_e1_attentions = e2_to_e1_attentions.permute(1, 0, 2) # batch_size, layers_count, heads_count
 
-        # flatten and concat attentions
+        # flatten and first fc layers
         e1_to_e2_attentions = e1_to_e2_attentions.reshape(e1_to_e2_attentions.shape[0], -1) # batch_size, layers_count*heads_count
         e2_to_e1_attentions = e2_to_e1_attentions.reshape(e2_to_e1_attentions.shape[0], -1) # batch_size, layers_count*heads_count
-        e_to_e_attentions = torch.cat((e1_to_e2_attentions, e2_to_e1_attentions), 1) # batch_size, layers_count*heads_count*2
+        e1_to_e2_attentions = self.e1_to_e2_fc_layer(e1_to_e2_attentions) # batch_size, layers_count*heads_count
+        e2_to_e1_attentions = self.e2_to_e1_fc_layer(e2_to_e1_attentions) # batch_size, layers_count*heads_count
 
-        # fc classifier
+        # concat and fc classifier
+        e_to_e_attentions = torch.cat((e1_to_e2_attentions, e2_to_e1_attentions), 1) # batch_size, layers_count*heads_count*2
         logits = self.label_classifier(e_to_e_attentions)
 
         outputs = (logits,)
