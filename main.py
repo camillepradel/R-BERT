@@ -73,6 +73,11 @@ if __name__ == "__main__":
         help="The index of the highest layer whose attention heads will be used for classification",
     )
     parser.add_argument(
+        "--use_residual_layer",
+        action="store_true",
+        help="Add a skip connection from attention weights to final fc classifier",
+    )
+    parser.add_argument(
         "--learning_rate",
         default=2e-5,
         type=float,
