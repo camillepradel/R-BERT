@@ -32,13 +32,12 @@ class RBERT(BertPreTrainedModel):
         self.use_residual_layer = args.use_residual_layer
         self.layers_to_use = list(range(args.first_layer_to_use, args.last_layer_to_use+1))
 
-        e_to_e_size = len(self.layers_to_use) * config.num_attention_heads
-        label_classifier_input_size = e_to_e_size*2
+        fc_layer_size = len(self.layers_to_use) * config.num_attention_heads * 2
+        label_classifier_input_size = fc_layer_size
         if self.use_residual_layer:
             label_classifier_input_size *= 2
 
-        self.e1_to_e2_fc_layer = FCLayer(e_to_e_size, e_to_e_size, args.dropout_rate)
-        self.e2_to_e1_fc_layer = FCLayer(e_to_e_size, e_to_e_size, args.dropout_rate)
+        self.fc_layer = FCLayer(fc_layer_size, fc_layer_size, args.dropout_rate)
         self.label_classifier = FCLayer(
             label_classifier_input_size,
             config.num_labels,
@@ -139,18 +138,18 @@ class RBERT(BertPreTrainedModel):
         e1_to_e2_attentions = e1_to_e2_attentions.permute(1, 0, 2) # batch_size, layers_count, heads_count
         e2_to_e1_attentions = e2_to_e1_attentions.permute(1, 0, 2) # batch_size, layers_count, heads_count
 
-        # flatten and first fc layers
+        # first fc layer
         e1_to_e2_attentions = e1_to_e2_attentions.reshape(e1_to_e2_attentions.shape[0], -1) # batch_size, layers_count*heads_count
         e2_to_e1_attentions = e2_to_e1_attentions.reshape(e2_to_e1_attentions.shape[0], -1) # batch_size, layers_count*heads_count
-        e1_to_e2_fc_output = self.e1_to_e2_fc_layer(e1_to_e2_attentions) # batch_size, layers_count*heads_count
-        e2_to_e1_fc_output = self.e2_to_e1_fc_layer(e2_to_e1_attentions) # batch_size, layers_count*heads_count
+        e_to_e_attentions = torch.cat((e1_to_e2_attentions, e2_to_e1_attentions), 1) # batch_size, layers_count*heads_count*2
+        e_to_e_fc_output = self.fc_layer(e_to_e_attentions) # batch_size, layers_count*heads_count*2
 
-        # concat and fc classifier
-        to_be_cat = (e1_to_e2_fc_output, e2_to_e1_fc_output)
+        # fc classifier
+        label_classifier_input = e_to_e_fc_output # batch_size, layers_count*heads_count*2
         if self.use_residual_layer:
-            to_be_cat = (e1_to_e2_attentions, e2_to_e1_attentions,) + to_be_cat
-        e_to_e_attentions = torch.cat(to_be_cat, 1) # batch_size, layers_count*heads_count*2 (*2 if use_residual_layer set to True)
-        logits = self.label_classifier(e_to_e_attentions)
+            to_be_cat = (e1_to_e2_attentions, e2_to_e1_attentions, e_to_e_attentions)
+            label_classifier_input = torch.cat(to_be_cat, 1) # batch_size, layers_count*heads_count*2 (*2 if use_residual_layer set to True)
+        logits = self.label_classifier(label_classifier_input) # batch_size, num_labels
 
         outputs = (logits,)
 
