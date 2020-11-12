@@ -94,7 +94,11 @@ class Trainer(object):
         # first train only the fc layers (with the transformer frozen)
         logger.info(f'Train with frozen transformer')
         self.set_transformer_trainable(False)
-        train_iterator = trange(int(self.args.num_train_epochs_frozen), desc="Epoch")
+        if self.args.do_not_use_tqdm:
+            train_iterator = range(int(self.args.num_train_epochs_frozen))
+            logger.info(f'{self.args.num_train_epochs_frozen} epochs to run')
+        else:
+            train_iterator = trange(int(self.args.num_train_epochs_frozen), desc="Epoch")
 
         for _ in train_iterator:
             global_step, tr_loss = self.train_one_epoch(
@@ -107,7 +111,11 @@ class Trainer(object):
         # then train all parameters
         logger.info(f'Train all parameters')
         self.set_transformer_trainable(False)
-        train_iterator = trange(int(self.args.num_train_epochs - self.args.num_train_epochs_frozen), desc="Epoch")
+        if self.args.do_not_use_tqdm:
+            train_iterator = range(int(self.args.num_train_epochs - self.args.num_train_epochs_frozen))
+            logger.info(f'{self.args.num_train_epochs - self.args.num_train_epochs_frozen} epochs to run')
+        else:
+            train_iterator = trange(int(self.args.num_train_epochs - self.args.num_train_epochs_frozen), desc="Epoch")
 
         for _ in train_iterator:
             global_step, tr_loss = self.train_one_epoch(
@@ -124,7 +132,11 @@ class Trainer(object):
             param.requires_grad = requires_grad
 
     def train_one_epoch(self, train_dataloader, optimizer, scheduler, global_step, tr_loss):
-        epoch_iterator = tqdm(train_dataloader, desc="Iteration")
+        if self.args.do_not_use_tqdm:
+            epoch_iterator = train_dataloader
+            logger.info(f'{len(train_dataloader)} iterations to run')
+        else:
+            epoch_iterator = tqdm(train_dataloader, desc="Iteration")
         for step, batch in enumerate(epoch_iterator):
             self.model.train()
             batch = tuple(t.to(self.device) for t in batch)  # GPU or CPU
@@ -188,7 +200,13 @@ class Trainer(object):
 
         self.model.eval()
 
-        for batch in tqdm(eval_dataloader, desc="Evaluating"):
+        if self.args.do_not_use_tqdm:
+            epoch_iterator = eval_dataloader
+            logger.info(f'{len(eval_dataloader)} iterations to run')
+        else:
+            epoch_iterator = tqdm(eval_dataloader, desc="Evaluating")
+
+        for batch in epoch_iterator:
             batch = tuple(t.to(self.device) for t in batch)
             with torch.no_grad():
                 inputs = {

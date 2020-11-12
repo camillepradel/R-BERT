@@ -129,6 +129,11 @@ if __name__ == "__main__":
         action="store_true",
         help="Add [SEP] token at the end of the sentence",
     )
+    parser.add_argument(
+        "--do_not_use_tqdm",
+        action="store_true",
+        help="Whether to disable fancy progress bars",
+    )
 
     args = parser.parse_args()
 
