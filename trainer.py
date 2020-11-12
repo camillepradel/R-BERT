@@ -100,7 +100,9 @@ class Trainer(object):
         else:
             train_iterator = trange(int(self.args.num_train_epochs_frozen), desc="Epoch")
 
-        for _ in train_iterator:
+        for i_epoch in train_iterator:
+            if self.args.do_not_use_tqdm:
+                logger.info(f'Epoch {i_epoch}')
             global_step, tr_loss = self.train_one_epoch(
                 train_dataloader, optimizer, scheduler, global_step, tr_loss)
 
@@ -115,9 +117,11 @@ class Trainer(object):
             train_iterator = range(int(self.args.num_train_epochs - self.args.num_train_epochs_frozen))
             logger.info(f'{self.args.num_train_epochs - self.args.num_train_epochs_frozen} epochs to run')
         else:
-            train_iterator = trange(int(self.args.num_train_epochs - self.args.num_train_epochs_frozen), desc="Epoch")
+            train_iterator = trange(int(self.args.num_train_epochs_frozen), int(self.args.num_train_epochs), desc="Epoch")
 
-        for _ in train_iterator:
+        for i_epoch in train_iterator:
+            if self.args.do_not_use_tqdm:
+                logger.info(f'Epoch {i_epoch}')
             global_step, tr_loss = self.train_one_epoch(
                 train_dataloader, optimizer, scheduler, global_step, tr_loss)
 
