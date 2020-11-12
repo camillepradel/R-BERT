@@ -91,53 +91,79 @@ class Trainer(object):
         tr_loss = 0.0
         self.model.zero_grad()
 
-        train_iterator = trange(int(self.args.num_train_epochs), desc="Epoch")
+        # first train only the fc layers (with the transformer frozen)
+        logger.info(f'Train with frozen transformer')
+        self.set_transformer_trainable(False)
+        train_iterator = trange(int(self.args.num_train_epochs_frozen), desc="Epoch")
 
         for _ in train_iterator:
-            epoch_iterator = tqdm(train_dataloader, desc="Iteration")
-            for step, batch in enumerate(epoch_iterator):
-                self.model.train()
-                batch = tuple(t.to(self.device) for t in batch)  # GPU or CPU
-                inputs = {
-                    "input_ids": batch[0],
-                    "attention_mask": batch[1],
-                    "token_type_ids": batch[2],
-                    "labels": batch[3],
-                    "e1_mask": batch[4],
-                    "e2_mask": batch[5],
-                }
-                outputs = self.model(**inputs)
-                loss = outputs[0]
+            global_step, tr_loss = self.train_one_epoch(
+                train_dataloader, optimizer, scheduler, global_step, tr_loss)
 
-                if self.args.gradient_accumulation_steps > 1:
-                    loss = loss / self.args.gradient_accumulation_steps
+            if 0 < self.args.max_steps < global_step:
+                train_iterator.close()
+                break
 
-                loss.backward()
+        # then train all parameters
+        logger.info(f'Train all parameters')
+        self.set_transformer_trainable(False)
+        train_iterator = trange(int(self.args.num_train_epochs - self.args.num_train_epochs_frozen), desc="Epoch")
 
-                tr_loss += loss.item()
-                if (step + 1) % self.args.gradient_accumulation_steps == 0:
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.args.max_grad_norm)
-
-                    optimizer.step()
-                    scheduler.step()  # Update learning rate schedule
-                    self.model.zero_grad()
-                    global_step += 1
-
-                    if self.args.logging_steps > 0 and global_step % self.args.logging_steps == 0:
-                        self.evaluate("test")  # There is no dev set for semeval task
-
-                    if self.args.save_steps > 0 and global_step % self.args.save_steps == 0:
-                        self.save_model()
-
-                if 0 < self.args.max_steps < global_step:
-                    epoch_iterator.close()
-                    break
+        for _ in train_iterator:
+            global_step, tr_loss = self.train_one_epoch(
+                train_dataloader, optimizer, scheduler, global_step, tr_loss)
 
             if 0 < self.args.max_steps < global_step:
                 train_iterator.close()
                 break
 
         return global_step, tr_loss / global_step
+
+    def set_transformer_trainable(self, requires_grad=True):
+        for param in self.model.bert.parameters():
+            param.requires_grad = requires_grad
+
+    def train_one_epoch(self, train_dataloader, optimizer, scheduler, global_step, tr_loss):
+        epoch_iterator = tqdm(train_dataloader, desc="Iteration")
+        for step, batch in enumerate(epoch_iterator):
+            self.model.train()
+            batch = tuple(t.to(self.device) for t in batch)  # GPU or CPU
+            inputs = {
+                "input_ids": batch[0],
+                "attention_mask": batch[1],
+                "token_type_ids": batch[2],
+                "labels": batch[3],
+                "e1_mask": batch[4],
+                "e2_mask": batch[5],
+            }
+            outputs = self.model(**inputs)
+            loss = outputs[0]
+
+            if self.args.gradient_accumulation_steps > 1:
+                loss = loss / self.args.gradient_accumulation_steps
+
+            loss.backward()
+
+            tr_loss += loss.item()
+            if (step + 1) % self.args.gradient_accumulation_steps == 0:
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.args.max_grad_norm)
+
+                optimizer.step()
+                scheduler.step()  # Update learning rate schedule
+                self.model.zero_grad()
+                global_step += 1
+
+                if self.args.logging_steps > 0 and global_step % self.args.logging_steps == 0:
+                    self.evaluate("test")  # There is no dev set for semeval task
+
+                if self.args.save_steps > 0 and global_step % self.args.save_steps == 0:
+                    self.save_model()
+
+            if 0 < self.args.max_steps < global_step:
+                epoch_iterator.close()
+                break
+
+        return global_step, tr_loss
 
     def evaluate(self, mode):
         # We use test dataset because semeval doesn't have dev dataset

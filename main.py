@@ -84,6 +84,12 @@ if __name__ == "__main__":
         type=float,
         help="Total number of training epochs to perform.",
     )
+    parser.add_argument(
+        "--num_train_epochs_frozen",
+        default=2.0,
+        type=float,
+        help="Number of training epochs with frozen transformer.",
+    )
     parser.add_argument("--weight_decay", default=0.0, type=float, help="Weight decay if we apply some.")
     parser.add_argument(
         "--gradient_accumulation_steps",
