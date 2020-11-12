@@ -110,7 +110,7 @@ class Trainer(object):
 
         # then train all parameters
         logger.info(f'Train all parameters')
-        self.set_transformer_trainable(False)
+        self.set_transformer_trainable(True)
         if self.args.do_not_use_tqdm:
             train_iterator = range(int(self.args.num_train_epochs - self.args.num_train_epochs_frozen))
             logger.info(f'{self.args.num_train_epochs - self.args.num_train_epochs_frozen} epochs to run')
