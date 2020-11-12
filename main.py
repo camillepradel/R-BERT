@@ -61,6 +61,18 @@ if __name__ == "__main__":
         help="The maximum total input sequence length after tokenization.",
     )
     parser.add_argument(
+        "--first_layer_to_use",
+        default=6,
+        type=int,
+        help="The index of the lowest layer whose attention heads will be used for classification",
+    )
+    parser.add_argument(
+        "--last_layer_to_use",
+        default=11,
+        type=int,
+        help="The index of the highest layer whose attention heads will be used for classification",
+    )
+    parser.add_argument(
         "--learning_rate",
         default=2e-5,
         type=float,

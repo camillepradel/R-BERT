@@ -25,7 +25,12 @@ class RBERT(BertPreTrainedModel):
 
         self.num_labels = config.num_labels
 
-        e_to_e_size = config.num_hidden_layers * config.num_attention_heads
+        assert 0 <= args.first_layer_to_use and args.first_layer_to_use < config.num_hidden_layers, "first_layer_to_use must be between 0 and num_hidden_layers-1"
+        assert 0 <= args.last_layer_to_use and args.last_layer_to_use < config.num_hidden_layers, "last_layer_to_use must be between 0 and num_hidden_layers-1"
+        assert args.first_layer_to_use <= args.last_layer_to_use, "first_layer_to_use must be lower than or equal to last_layer_to_use"
+        self.layers_to_use = list(range(args.first_layer_to_use, args.last_layer_to_use+1))
+
+        e_to_e_size = len(self.layers_to_use) * config.num_attention_heads
 
         self.e1_to_e2_fc_layer = FCLayer(e_to_e_size, e_to_e_size, args.dropout_rate)
         self.e2_to_e1_fc_layer = FCLayer(e_to_e_size, e_to_e_size, args.dropout_rate)
@@ -117,6 +122,9 @@ class RBERT(BertPreTrainedModel):
         attentions = outputs['attentions'] # tuple of layers_count tensors
                                            # each tensor is of shape batch_size, heads_count, max_seq_length, max_seq_length
         attentions = torch.stack(attentions) # layers_count, batch_size, heads_count, max_seq_length, max_seq_length
+
+        # select layers whose attention heads will be used for classification
+        attentions = attentions[self.layers_to_use]
 
         # Average
         e1_to_e2_attentions = self.entity_to_entity_attentions(attentions, e1_mask, e2_mask) # layers_count, batch_size, heads_count
