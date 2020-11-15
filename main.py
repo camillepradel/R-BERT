@@ -72,11 +72,11 @@ if __name__ == "__main__":
         type=int,
         help="The index of the highest layer whose attention heads will be used for classification",
     )
-    parser.add_argument(
-        "--use_residual_layer",
-        action="store_true",
-        help="Add a skip connection from attention weights to final fc classifier",
-    )
+    # parser.add_argument(
+    #     "--use_residual_layer",
+    #     action="store_true",
+    #     help="Add a skip connection from attention weights to final fc classifier",
+    # )
     parser.add_argument(
         "--learning_rate",
         default=2e-5,
@@ -91,7 +91,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--num_train_epochs_frozen",
-        default=2.0,
+        default=0.0,
         type=float,
         help="Number of training epochs with frozen transformer.",
     )
