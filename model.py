@@ -36,15 +36,15 @@ class RBERT(BertPreTrainedModel):
         fc1_d2_layer_input_size = len(self.layers_to_use) * config.num_attention_heads * config.num_attention_heads * 2
         fc1_d1_layer_output_size = 100 # TODO: should be parameterized
         fc1_d2_layer_output_size = 500 # TODO: should be parameterized
-        fc2_layer_input_size = fc1_d1_layer_output_size+fc1_d2_layer_output_size
-        fc2_layer_output_size = 100 # TODO: should be parameterized
-        label_classifier_input_size = fc2_layer_output_size
+        # fc2_layer_input_size = fc1_d1_layer_output_size+fc1_d2_layer_output_size
+        # fc2_layer_output_size = 100 # TODO: should be parameterized
+        label_classifier_input_size = fc1_d1_layer_output_size+fc1_d2_layer_output_size
         # if self.use_residual_layer:
         #     label_classifier_input_size += fc1_d2_layer_input_size
 
         self.fc1_d1_layer = FCLayer(fc1_d1_layer_input_size, fc1_d1_layer_output_size, args.dropout_rate)
         self.fc1_d2_layer = FCLayer(fc1_d2_layer_input_size, fc1_d2_layer_output_size, args.dropout_rate)
-        self.fc2_layer = FCLayer(fc2_layer_input_size, fc2_layer_output_size, args.dropout_rate)
+        # self.fc2_layer = FCLayer(fc2_layer_input_size, fc2_layer_output_size, args.dropout_rate)
         self.label_classifier = FCLayer(
             label_classifier_input_size,
             config.num_labels,
@@ -184,13 +184,13 @@ class RBERT(BertPreTrainedModel):
 
         # second fc layer for depth-1 and 2 attentions
         e_to_e_fc1_output_cat = torch.cat((e_to_e_fc1_output_d1, pooled_e_to_e_fc1_output_d2), 1) # batch_size, fc1_d1_layer_output_size+fc1_d2_layer_output_size
-        e_to_e_fc2_output = self.fc2_layer(e_to_e_fc1_output_cat) # batch_size, fc2_layer_output_size
+        # e_to_e_fc2_output = self.fc2_layer(e_to_e_fc1_output_cat) # batch_size, fc2_layer_output_size
 
         # fc classifier
         # if self.use_residual_layer:
         #     to_be_cat = (e1_to_e2_attentions, e2_to_e1_attentions, e_to_e_attentions)
         #     label_classifier_input = torch.cat(to_be_cat, 2) # batch_size, max_seq_length, layers_to_use_count*heads_count*heads_count*2 (*2 if use_residual_layer set to True)
-        logits = self.label_classifier(e_to_e_fc2_output) # batch_size, num_labels
+        logits = self.label_classifier(e_to_e_fc1_output_cat) # batch_size, num_labels
 
         outputs = (logits,)
 
