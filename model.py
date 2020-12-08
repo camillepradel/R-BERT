@@ -32,36 +32,25 @@ class RBERT(BertPreTrainedModel):
         # self.use_residual_layer = args.use_residual_layer
         self.layers_to_use = list(range(args.first_layer_to_use, args.last_layer_to_use+1))
 
-        fc_layer_input_size = len(self.layers_to_use) * config.num_attention_heads * config.num_attention_heads * 2
-        fc_layer_output_size = 500 # could be something else
-        label_classifier_input_size = fc_layer_output_size
+        fc1_d1_layer_input_size = len(self.layers_to_use) * config.num_attention_heads * 2
+        fc1_d2_layer_input_size = len(self.layers_to_use) * config.num_attention_heads * config.num_attention_heads * 2
+        fc1_d1_layer_output_size = 100 # TODO: should be parameterized
+        fc1_d2_layer_output_size = 500 # TODO: should be parameterized
+        fc2_layer_input_size = fc1_d1_layer_output_size+fc1_d2_layer_output_size
+        fc2_layer_output_size = 100 # TODO: should be parameterized
+        label_classifier_input_size = fc2_layer_output_size
         # if self.use_residual_layer:
-        #     label_classifier_input_size += fc_layer_input_size
+        #     label_classifier_input_size += fc1_d2_layer_input_size
 
-        self.fc_layer = FCLayer(fc_layer_input_size, fc_layer_output_size, args.dropout_rate)
+        self.fc1_d1_layer = FCLayer(fc1_d1_layer_input_size, fc1_d1_layer_output_size, args.dropout_rate)
+        self.fc1_d2_layer = FCLayer(fc1_d2_layer_input_size, fc1_d2_layer_output_size, args.dropout_rate)
+        self.fc2_layer = FCLayer(fc2_layer_input_size, fc2_layer_output_size, args.dropout_rate)
         self.label_classifier = FCLayer(
             label_classifier_input_size,
             config.num_labels,
             args.dropout_rate,
             use_activation=False,
         )
-
-    # @staticmethod
-    # def entity_average(hidden_output, e_mask):
-    #     """
-    #     Average the entity hidden state vectors (H_i ~ H_j)
-    #     :param hidden_output: [batch_size, j-i+1, dim]
-    #     :param e_mask: [batch_size, max_seq_len]
-    #             e.g. e_mask[0] == [0, 0, 0, 1, 1, 1, 0, 0, ... 0]
-    #     :return: [batch_size, dim]
-    #     """
-    #     e_mask_unsqueeze = e_mask.unsqueeze(1)  # [b, 1, j-i+1]
-    #     length_tensor = (e_mask != 0).sum(dim=1).unsqueeze(1)  # [batch_size, 1]
-
-    #     # [b, 1, j-i+1] * [b, j-i+1, dim] = [b, 1, dim] -> [b, dim]
-    #     sum_vector = torch.bmm(e_mask_unsqueeze.float(), hidden_output).squeeze(1)
-    #     avg_vector = sum_vector.float() / length_tensor.float()  # broadcasting
-    #     return avg_vector
 
     @staticmethod
     def attending_entity_average(attentions, e_mask):
@@ -81,6 +70,25 @@ class RBERT(BertPreTrainedModel):
         mul_vector = e_mask_unsqueeze.float() * attentions # [batch_size, max_seq_length, max_seq_length, layers_to_use_count, heads_count]
         sum_vector = torch.sum(mul_vector, dim=1) # [batch_size, max_seq_length, layers_to_use_count, heads_count]
         avg_vector = sum_vector.float() / length_tensor.float() # [batch_size, max_seq_length, layers_to_use_count, heads_count]
+        return avg_vector
+
+    @staticmethod
+    def attended_entity_average_from_averaged_attending_entity(attentions, e_mask):
+        """
+        Average the attention vectors (H_i ~ H_j)
+        :param attentions: [batch_size, max_seq_length, layers_to_use_count, heads_count]
+        :param e_mask: [batch_size, max_seq_length]
+                e.g. e_mask[0] == [0, 0, 0, 1, 1, 1, 0, 0, ... 0]
+        :return: [batch_size, layers_to_use_count, heads_count]
+        """
+        e_mask_unsqueeze = e_mask
+        e_mask_unsqueeze = e_mask_unsqueeze.unsqueeze(2)  # [batch_size, max_seq_length, 1]
+        e_mask_unsqueeze = e_mask_unsqueeze.unsqueeze(2)  # [batch_size, max_seq_length, 1, 1]
+        length_tensor = (e_mask != 0).sum(dim=1).unsqueeze(1).unsqueeze(1)  # [batch_size, 1, 1]
+
+        mul_vector = e_mask_unsqueeze.float() * attentions # [batch_size, max_seq_length, layers_to_use_count, heads_count]
+        sum_vector = torch.sum(mul_vector, dim=1) # [batch_size, layers_to_use_count, heads_count]
+        avg_vector = sum_vector.float() / length_tensor.float() # [batch_size, layers_to_use_count, heads_count]
         return avg_vector
 
     @staticmethod
@@ -104,15 +112,30 @@ class RBERT(BertPreTrainedModel):
         return avg_vector
 
     @staticmethod
-    def entity_to_entity_attentions(attentions, attending_mask, attended_mask):
+    def entity_to_entity_attentions_depth1(attentions, attending_mask, attended_mask):
+        """
+        Select the attention heads from e1 to e2 averaging over all tokens for each entity.
+        :param attentions: [batch_size, max_seq_length, max_seq_length, layers_to_use_count, heads_count]
+        :param attending_mask: [batch_size, max_seq_length]
+                e.g. attending_mask[0] == [0, 0, 0, 1, 1, 1, 0, 0, ... 0]
+        :param attended_mask: [batch_size, max_seq_length]
+                e.g. attended_mask[0] == [0, 0, 0, 1, 1, 1, 0, 0, ... 0]
+        :return: [batch_size, layers_to_use_count, heads_count]
+        """
+        e1_avg_vector = RBERT.attending_entity_average(attentions, attending_mask) # [batch_size, max_seq_length, layers_to_use_count, heads_count]
+        e2_avg_vector = RBERT.attended_entity_average_from_averaged_attending_entity(e1_avg_vector, attended_mask) #  [batch_size, layers_to_use_count, heads_count]
+        return e2_avg_vector
+
+    @staticmethod
+    def entity_to_entity_attentions_depth2(attentions, attending_mask, attended_mask):
         """
         Select the attention heads from attending to attended averaging over all tokens for each entity.
         :param attentions: [batch_size, max_seq_length, max_seq_length, layers_to_use_count, heads_count]
         :param attending_mask: [batch_size, max_seq_length]
-                e.g. e_mask[0] == [0, 0, 0, 1, 1, 1, 0, 0, ... 0]
+                e.g. attending_mask[0] == [0, 0, 0, 1, 1, 1, 0, 0, ... 0]
         :param attended_mask: [batch_size, max_seq_length]
-                e.g. e_mask[0] == [0, 0, 0, 1, 1, 1, 0, 0, ... 0]
-        :return: [batch_size, layers_to_use_count, max_seq_length, heads_count, heads_count]
+                e.g. attended_mask[0] == [0, 0, 0, 1, 1, 1, 0, 0, ... 0]
+        :return: [batch_size, max_seq_length, layers_to_use_count, heads_count, heads_count]
         """
         attending_avg = RBERT.attending_entity_average(attentions, attending_mask) # batch_size, max_seq_length, layers_to_use_count, heads_count
         attended_avg = RBERT.attended_entity_average(attentions, attended_mask) # batch_size, max_seq_length, layers_to_use_count, heads_count
@@ -135,25 +158,39 @@ class RBERT(BertPreTrainedModel):
         # select layers whose attention heads will be used for classification
         attentions = attentions[self.layers_to_use] # layers_to_use_count, batch_size, heads_count, max_seq_length, max_seq_length
 
-        # swap dimensions
+        # permute dimensions
         attentions = attentions.permute(1, 3, 4, 0, 2) # batch_size, max_seq_length, max_seq_length, layers_to_use_count, heads_count
 
-        # attentions between entities
-        e1_to_e2_attentions = self.entity_to_entity_attentions(attentions, e1_mask, e2_mask) # batch_size, max_seq_length, layers_to_use_count, heads_count, heads_count
-        e2_to_e1_attentions = self.entity_to_entity_attentions(attentions, e2_mask, e1_mask) # batch_size, max_seq_length, layers_to_use_count, heads_count, heads_count
+        # depth-1 attentions between entities
+        e1_to_e2_attentions_d1 = self.entity_to_entity_attentions_depth1(attentions, e1_mask, e2_mask) # batch_size, layers_to_use_count, heads_count
+        e2_to_e1_attentions_d1 = self.entity_to_entity_attentions_depth1(attentions, e2_mask, e1_mask) # batch_size, layers_to_use_count, heads_count
 
-        # first fc layer
-        e1_to_e2_attentions = e1_to_e2_attentions.reshape(e1_to_e2_attentions.shape[0], e1_to_e2_attentions.shape[1], -1) # batch_size, max_seq_length, layers_to_use_count*heads_count*heads_count
-        e2_to_e1_attentions = e2_to_e1_attentions.reshape(e2_to_e1_attentions.shape[0], e2_to_e1_attentions.shape[1], -1) # batch_size, max_seq_length, layers_to_use_count*heads_count*heads_count
-        e_to_e_attentions = torch.cat((e1_to_e2_attentions, e2_to_e1_attentions), 2) # batch_size, max_seq_length, layers_to_use_count*heads_count*heads_count*2
-        e_to_e_fc_output = self.fc_layer(e_to_e_attentions) # batch_size, max_seq_length, fc_layer_output_size
+        # depth-2 attentions between entities
+        e1_to_e2_attentions_d2 = self.entity_to_entity_attentions_depth2(attentions, e1_mask, e2_mask) # batch_size, max_seq_length, layers_to_use_count, heads_count, heads_count
+        e2_to_e1_attentions_d2 = self.entity_to_entity_attentions_depth2(attentions, e2_mask, e1_mask) # batch_size, max_seq_length, layers_to_use_count, heads_count, heads_count
+
+        # first fc layer for depth-1 attentions
+        e1_to_e2_attentions_d1 = e1_to_e2_attentions_d1.reshape(e1_to_e2_attentions_d1.shape[0], -1) # batch_size, layers_to_use_count*heads_count
+        e2_to_e1_attentions_d1 = e2_to_e1_attentions_d1.reshape(e2_to_e1_attentions_d1.shape[0], -1) # batch_size, layers_to_use_count*heads_count
+        e_to_e_attentions_d1 = torch.cat((e1_to_e2_attentions_d1, e2_to_e1_attentions_d1), 1) # batch_size, layers_to_use_count*heads_count*2
+        e_to_e_fc1_output_d1 = self.fc1_d1_layer(e_to_e_attentions_d1) # batch_size, fc1_d1_layer_output_size
+
+        # first fc layer for depth-2 attentions with max pooling along tokens
+        e1_to_e2_attentions_d2 = e1_to_e2_attentions_d2.reshape(e1_to_e2_attentions_d2.shape[0], e1_to_e2_attentions_d2.shape[1], -1) # batch_size, max_seq_length, layers_to_use_count*heads_count*heads_count
+        e2_to_e1_attentions_d2 = e2_to_e1_attentions_d2.reshape(e2_to_e1_attentions_d2.shape[0], e2_to_e1_attentions_d2.shape[1], -1) # batch_size, max_seq_length, layers_to_use_count*heads_count*heads_count
+        e_to_e_attentions_d2 = torch.cat((e1_to_e2_attentions_d2, e2_to_e1_attentions_d2), 2) # batch_size, max_seq_length, layers_to_use_count*heads_count*heads_count*2
+        e_to_e_fc1_output_d2 = self.fc1_d2_layer(e_to_e_attentions_d2) # batch_size, max_seq_length, fc1_d2_layer_output_size
+        pooled_e_to_e_fc1_output_d2 = torch.amax(e_to_e_fc1_output_d2, dim=1) # batch_size, fc1_d2_layer_output_size
+
+        # second fc layer for depth-1 and 2 attentions
+        e_to_e_fc1_output_cat = torch.cat((e_to_e_fc1_output_d1, pooled_e_to_e_fc1_output_d2), 1) # batch_size, fc1_d1_layer_output_size+fc1_d2_layer_output_size
+        e_to_e_fc2_output = self.fc2_layer(e_to_e_fc1_output_cat) # batch_size, fc2_layer_output_size
 
         # fc classifier
-        label_classifier_input = torch.amax(e_to_e_fc_output, dim=1) # batch_size, fc_layer_output_size
         # if self.use_residual_layer:
         #     to_be_cat = (e1_to_e2_attentions, e2_to_e1_attentions, e_to_e_attentions)
         #     label_classifier_input = torch.cat(to_be_cat, 2) # batch_size, max_seq_length, layers_to_use_count*heads_count*heads_count*2 (*2 if use_residual_layer set to True)
-        logits = self.label_classifier(label_classifier_input) # batch_size, num_labels
+        logits = self.label_classifier(e_to_e_fc2_output) # batch_size, num_labels
 
         outputs = (logits,)
 
