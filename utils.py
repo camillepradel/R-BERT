@@ -28,7 +28,7 @@ def load_tokenizer(args):
             line = line.replace('[unused3]', ADDITIONAL_SPECIAL_TOKENS[2])
             line = line.replace('[unused4]', ADDITIONAL_SPECIAL_TOKENS[3])
             print(line, end='')
-    tokenizer = BertTokenizer.from_pretrained(args.model_dir, do_lower_case=False)
+    tokenizer = BertTokenizer.from_pretrained(args.model_dir)
     tokenizer.add_special_tokens({"additional_special_tokens": ADDITIONAL_SPECIAL_TOKENS})
     return tokenizer
 
