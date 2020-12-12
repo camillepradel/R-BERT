@@ -57,11 +57,11 @@ class DataTrainingArguments:
         metadata={"help": "he input data dir. Should contain the .tsv files (or other data files) for the task."}
     )
     train_file: Optional[str] = field(
-        default="train.txt",
+        default="train.tsv",
         metadata={"help": "Train file"}
     )
     test_file: Optional[str] = field(
-        default="test.txt",
+        default="test.tsv",
         metadata={"help": "Test file"}
     )
     label_file: Optional[str] = field(
@@ -115,6 +115,9 @@ class RBertTrainingArguments(TrainingArguments):
         default="./eval",
         metadata={"help": "Evaluation script, result directory"}
     )
+    # override default values from TrainingArguments
+    learning_rate: float = field(default=2e-5, metadata={"help": "The initial learning rate for Adam."})
+    num_train_epochs: float = field(default=10.0, metadata={"help": "Total number of training epochs to perform."})
 
 
 def main():
