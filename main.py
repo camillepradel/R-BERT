@@ -1,6 +1,6 @@
-import argparse
 import logging
 import os
+import sys
 import random
 from dataclasses import dataclass, field
 from typing import Optional
@@ -8,7 +8,15 @@ from typing import Optional
 import numpy as np
 import torch
 import transformers
-from transformers import Trainer, TrainingArguments, set_seed, EvalPrediction, AutoConfig, default_data_collator
+from transformers import (
+    Trainer,
+    TrainingArguments,
+    set_seed,
+    EvalPrediction,
+    AutoConfig,
+    default_data_collator,
+    HfArgumentParser
+)
 from transformers.trainer_utils import is_main_process
 from datasets import load_dataset
 
@@ -109,47 +117,18 @@ class RBertTrainingArguments(TrainingArguments):
     )
 
 
-def main(args):
+def main():
     # See all possible arguments in src/transformers/training_args.py
     # or by passing the --help flag to this script.
-    
-    data_training_args = DataTrainingArguments(
-        max_seq_length=args.max_seq_len,
-        data_dir=args.data_dir,
-        train_file=args.train_file,
-        test_file=args.test_file,
-        label_file=args.label_file,
-    )
-    model_args = ModelArguments(
-        model_name_or_path=args.model_name_or_path,
-        dropout_rate=args.dropout_rate,
-        first_layer_to_use=args.first_layer_to_use,
-        last_layer_to_use=args.last_layer_to_use,
-    )
-    training_args = RBertTrainingArguments(
-        output_dir=args.model_dir,
-        eval_dir=args.eval_dir,
-        num_train_epochs=args.num_train_epochs,
-        num_train_epochs_frozen=args.num_train_epochs_frozen,
-        per_device_train_batch_size=args.train_batch_size,
-        per_device_eval_batch_size=args.eval_batch_size,
-        max_steps=args.max_steps,
-        warmup_steps=args.warmup_steps,
-        weight_decay=args.weight_decay,
-        seed=args.seed,
-        learning_rate=args.learning_rate,
-        gradient_accumulation_steps=args.gradient_accumulation_steps,
-        adam_epsilon=args.adam_epsilon,
-        max_grad_norm=args.max_grad_norm,
-        logging_steps=args.logging_steps,
-        save_steps=args.save_steps,
-        do_train=args.do_train,
-        do_eval=args.do_eval,
-        no_cuda=args.no_cuda,
-        disable_tqdm=args.do_not_use_tqdm,
-        overwrite_output_dir=True,
-    )
 
+    parser = HfArgumentParser((ModelArguments, DataTrainingArguments, RBertTrainingArguments))
+    if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
+        # If we pass only one argument to the script and it's the path to a json file,
+        # let's parse it to get our arguments.
+        model_args, data_training_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
+    else:
+        model_args, data_training_args, training_args = parser.parse_args_into_dataclasses()
+    
     if (
         os.path.exists(training_args.output_dir)
         and os.listdir(training_args.output_dir)
@@ -317,122 +296,4 @@ def main(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-
-    parser.add_argument("--task", default="semeval", type=str, help="The name of the task to train")
-    parser.add_argument(
-        "--data_dir",
-        default="./data",
-        type=str,
-        help="The input data dir. Should contain the .tsv files (or other data files) for the task.",
-    )
-    parser.add_argument("--model_dir", default="./model", type=str, help="Path to model")
-    parser.add_argument(
-        "--eval_dir",
-        default="./eval",
-        type=str,
-        help="Evaluation script, result directory",
-    )
-    parser.add_argument("--train_file", default="train.tsv", type=str, help="Train file")
-    parser.add_argument("--test_file", default="test.tsv", type=str, help="Test file")
-    parser.add_argument("--label_file", default="label.txt", type=str, help="Label file")
-
-    parser.add_argument(
-        "--model_name_or_path",
-        type=str,
-        default="bert-base-uncased",
-        help="Model Name or Path",
-    )
-
-    parser.add_argument("--seed", type=int, default=42, help="random seed for initialization")
-    parser.add_argument("--train_batch_size", default=16, type=int, help="Batch size for training.")
-    parser.add_argument("--eval_batch_size", default=32, type=int, help="Batch size for evaluation.")
-    parser.add_argument(
-        "--max_seq_len",
-        default=384,
-        type=int,
-        help="The maximum total input sequence length after tokenization.",
-    )
-    parser.add_argument(
-        "--first_layer_to_use",
-        default=6,
-        type=int,
-        help="The index of the lowest layer whose attention heads will be used for classification",
-    )
-    parser.add_argument(
-        "--last_layer_to_use",
-        default=11,
-        type=int,
-        help="The index of the highest layer whose attention heads will be used for classification",
-    )
-    # parser.add_argument(
-    #     "--use_residual_layer",
-    #     action="store_true",
-    #     help="Add a skip connection from attention weights to final fc classifier",
-    # )
-    parser.add_argument(
-        "--learning_rate",
-        default=2e-5,
-        type=float,
-        help="The initial learning rate for Adam.",
-    )
-    parser.add_argument(
-        "--num_train_epochs",
-        default=10.0,
-        type=float,
-        help="Total number of training epochs to perform.",
-    )
-    parser.add_argument( # NOT DONE
-        "--num_train_epochs_frozen",
-        default=0.0,
-        type=float,
-        help="Number of training epochs with frozen transformer.",
-    )
-    parser.add_argument("--weight_decay", default=0.0, type=float, help="Weight decay if we apply some.")
-    parser.add_argument(
-        "--gradient_accumulation_steps",
-        type=int,
-        default=1,
-        help="Number of updates steps to accumulate before performing a backward/update pass.",
-    )
-    parser.add_argument("--adam_epsilon", default=1e-8, type=float, help="Epsilon for Adam optimizer.")
-    parser.add_argument("--max_grad_norm", default=1.0, type=float, help="Max gradient norm.")
-    parser.add_argument(
-        "--max_steps",
-        default=-1,
-        type=int,
-        help="If > 0: set total number of training steps to perform. Override num_train_epochs.",
-    )
-    parser.add_argument("--warmup_steps", default=0, type=int, help="Linear warmup over warmup_steps.")
-    parser.add_argument(
-        "--dropout_rate",
-        default=0.1,
-        type=float,
-        help="Dropout for fully-connected layers",
-    )
-
-    parser.add_argument("--logging_steps", type=int, default=250, help="Log every X updates steps.")
-    parser.add_argument(
-        "--save_steps",
-        type=int,
-        default=250,
-        help="Save checkpoint every X updates steps.",
-    )
-
-    parser.add_argument("--do_train", action="store_true", help="Whether to run training.")
-    parser.add_argument("--do_eval", action="store_true", help="Whether to run eval on the test set.")
-    parser.add_argument("--no_cuda", action="store_true", help="Avoid using CUDA when available")
-    parser.add_argument(
-        "--add_sep_token",
-        action="store_true",
-        help="Add [SEP] token at the end of the sentence",
-    )
-    parser.add_argument(
-        "--do_not_use_tqdm",
-        action="store_true",
-        help="Whether to disable fancy progress bars",
-    )
-
-    args = parser.parse_args()
-
-    main(args)
+    main()
