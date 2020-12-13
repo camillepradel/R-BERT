@@ -97,12 +97,12 @@ class ModelArguments:
         },
     )
     # TODO: implement behaviour for use_residual_layer
-    # use_residual_layer: bool = field(
-    #     default=False,
-    #     metadata={
-    #         "help": "Add a skip connection from attention weights to final fc classifier"
-    #     },
-    # )
+    use_residual_layer: bool = field(
+        default=False,
+        metadata={
+            "help": "Add a skip connection from attention weights to final fc classifier"
+        },
+    )
 
 
 @dataclass
@@ -206,14 +206,18 @@ def main():
         e2_start_id = tokenizer.convert_tokens_to_ids("<e2>")
         e2_end_id = tokenizer.convert_tokens_to_ids("</e2>")
 
-        for example_input_ids in result['input_ids']:
+        for i, example_input_ids in enumerate(result['input_ids']):
+
+            # take into account add_sep_token param
+            if not data_training_args.add_sep_token:
+                i_sep_token = example_input_ids.index(tokenizer.sep_token_id)
+                result['input_ids'][i][i_sep_token] = tokenizer.pad_token_id
+                result['attention_mask'][i][i_sep_token] = 0
 
             e11_p = example_input_ids.index(e1_start_id)  # the start position of entity1
             e12_p = example_input_ids.index(e1_end_id)  # the end position of entity1
             e21_p = example_input_ids.index(e2_start_id)  # the start position of entity2
             e22_p = example_input_ids.index(e2_end_id)  # the end position of entity2
-
-            # TODO: take into account add_sep_token param
 
             # e1 mask, e2 mask
             e1_mask = [0] * data_training_args.max_seq_length
