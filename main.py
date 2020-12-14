@@ -70,7 +70,7 @@ class DataTrainingArguments:
         metadata={"help": "Label file"}
     )
 
-
+# TODO: should be logged and used for hyperparameter tunning in wandb
 @dataclass
 class ModelArguments:
     """
@@ -97,11 +97,53 @@ class ModelArguments:
             "help": "The index of the highest layer whose attention heads will be used for classification"
         },
     )
-    # TODO: implement behaviour for use_residual_layer
-    use_residual_layer: bool = field(
+    fc1_d1_layer_output_size: int = field(
+        default=100,
+        metadata={
+            "help": "The size of the output of fc layer applied to depth-1 attentions. "
+            "Set to zero to not use this fc layer"
+        },
+    )
+    fc1_d2_layer_output_size: int = field(
+        default=500,
+        metadata={
+            "help": "The size of the output of fc layer applied to depth-2 attentions. "
+            "Set to zero to not use this fc layer"
+        },
+    )
+    fc2_layer_output_size: int = field(
+        default=100,
+        metadata={
+            "help": "The size of the output of fc layer applied to first fc layers output (or to attentions if the latter are disabled). "
+            "Set to zero to not use this fc layer"
+        },
+    )
+    skip_1_d1: bool = field(
         default=False,
         metadata={
-            "help": "Add a skip connection from attention weights to final fc classifier"
+            "help": "Add a skip connection (residual layer) from depth-1 attention weights to second fc layer (skip fc1_d1) "
+            "Cannot be set to True if fc1_d1 layer is disabled (fc1_d1_layer_output_size==0)"
+        },
+    )
+    skip_1_d2: bool = field(
+        default=False,
+        metadata={
+            "help": "Add a skip connection (residual layer) from max pooled depth-2 attention weights to second fc layer (skip fc1_d2) "
+            "Cannot be set to True if fc1_d2 layer is disabled (fc1_d2_layer_output_size==0)"
+        },
+    )
+    skip_2_d1: bool = field(
+        default=False,
+        metadata={
+            "help": "Add a skip connection (residual layer) from depth-1 attention weights to classifier layer (skip fc1_d1 and fc2) "
+            "Cannot be set to True if fc2 layer is disabled (fc2_layer_output_size==0)"
+        },
+    )
+    skip_2_d2: bool = field(
+        default=False,
+        metadata={
+            "help": "Add a skip connection (residual layer) from max pooled depth-2 attention weights to classifier layer (skip fc1_d2 and fc2) "
+            "Cannot be set to True if fc2 layer is disabled (fc2_layer_output_size==0)"
         },
     )
 
