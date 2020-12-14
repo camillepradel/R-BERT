@@ -36,20 +36,6 @@ class DataTrainingArguments:
     into argparse arguments to be able to specify them on
     the command line.
     """
-
-    max_seq_length: int = field(
-        default=128,
-        metadata={
-            "help": "The maximum total input sequence length after tokenization. Sequences longer "
-            "than this will be truncated, sequences shorter will be padded."
-        },
-    )
-    add_sep_token: bool = field(
-        default=False,
-        metadata={
-            "help": "Add [SEP] token at the end of the sentence"
-        },
-    )
     overwrite_cache: bool = field(
         default=False, metadata={"help": "Overwrite the cached preprocessed datasets or not."}
     )
@@ -144,6 +130,19 @@ class ModelArguments:
         metadata={
             "help": "Add a skip connection (residual layer) from max pooled depth-2 attention weights to classifier layer (skip fc1_d2 and fc2) "
             "Cannot be set to True if fc2 layer is disabled (fc2_layer_output_size==0)"
+        },
+    )
+    max_seq_length: int = field(
+        default=128,
+        metadata={
+            "help": "The maximum total input sequence length after tokenization. Sequences longer "
+            "than this will be truncated, sequences shorter will be padded."
+        },
+    )
+    add_sep_token: bool = field(
+        default=False,
+        metadata={
+            "help": "Add [SEP] token at the end of the sentence"
         },
     )
 
@@ -262,7 +261,7 @@ def main():
 
     def preprocess_function(examples):
         # Tokenize the texts
-        result = tokenizer(examples['sentence'], padding="max_length", max_length=data_training_args.max_seq_length, truncation=True)
+        result = tokenizer(examples['sentence'], padding="max_length", max_length=model_args.max_seq_length, truncation=True)
 
         e1_masks = []
         e2_masks = []
@@ -274,7 +273,7 @@ def main():
         for i, example_input_ids in enumerate(result['input_ids']):
 
             # take into account add_sep_token param
-            if not data_training_args.add_sep_token:
+            if not model_args.add_sep_token:
                 i_sep_token = example_input_ids.index(tokenizer.sep_token_id)
                 result['input_ids'][i][i_sep_token] = tokenizer.pad_token_id
                 result['attention_mask'][i][i_sep_token] = 0
@@ -285,14 +284,14 @@ def main():
             e22_p = example_input_ids.index(e2_end_id)  # the end position of entity2
 
             # e1 mask, e2 mask
-            e1_mask = [0] * data_training_args.max_seq_length
-            e2_mask = [0] * data_training_args.max_seq_length
+            e1_mask = [0] * model_args.max_seq_length
+            e2_mask = [0] * model_args.max_seq_length
 
             try:
                 for i in range(e11_p, e12_p + 1):
                     e1_mask[i] = 1
             except IndexError:
-                # entities can appear in the sentence after data_training_args.max_seq_length
+                # entities can appear in the sentence after model_args.max_seq_length
                 # in that case, we can't set any mask
                 logger.debug("Entity 1 appears beyond max_seq_length.")
 
@@ -300,7 +299,7 @@ def main():
                 for i in range(e21_p, e22_p + 1):
                     e2_mask[i] = 1
             except IndexError:
-                # entities can appear in the sentence after data_training_args.max_seq_length
+                # entities can appear in the sentence after model_args.max_seq_length
                 # in that case, we can't set any mask
                 logger.debug("Entity 2 appears beyond max_seq_length.")
             
