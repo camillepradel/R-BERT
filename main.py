@@ -15,7 +15,8 @@ from transformers import (
     EvalPrediction,
     AutoConfig,
     default_data_collator,
-    HfArgumentParser
+    HfArgumentParser,
+    TrainerCallback,
 )
 from transformers.trainer_utils import is_main_process
 from datasets import load_dataset
@@ -118,6 +119,28 @@ class RBertTrainingArguments(TrainingArguments):
     # override default values from TrainingArguments
     learning_rate: float = field(default=2e-5, metadata={"help": "The initial learning rate for Adam."})
     num_train_epochs: float = field(default=10.0, metadata={"help": "Total number of training epochs to perform."})
+
+
+# allows to freeze transformer weights during num_train_epochs_frozen epochs before unfreezing them
+class FreezeTransformerCallback(TrainerCallback):
+
+    def __init__(self, training_args):
+        self.num_train_epochs_frozen = training_args.num_train_epochs_frozen
+        self.transformer_frozen = False
+
+    def _set_transformer_trainable(self, model, requires_grad=True):
+        for param in model.bert.parameters():
+            param.requires_grad = requires_grad
+
+    def on_epoch_begin(self, args, state, control, logs=None, **kwargs):
+        if state.epoch < self.num_train_epochs_frozen and not self.transformer_frozen:
+            # freeze transformer weights
+            self._set_transformer_trainable(kwargs['model'], False)
+            self.transformer_frozen = True
+        elif state.epoch >= self.num_train_epochs_frozen and self.transformer_frozen:
+            # unfreeze transformer weights
+            self._set_transformer_trainable(kwargs['model'], True)
+            self.transformer_frozen = False
 
 
 def main():
@@ -268,9 +291,6 @@ def main():
             "f1": official_f1(),
         }
 
-    # TODO:
-    #  - implement behaviour with num_train_epochs_frozen
-    #  - setup original scheduler and weight decay behaviour
     trainer = Trainer(
         model=model,
         args=training_args,
@@ -278,6 +298,7 @@ def main():
         eval_dataset=eval_dataset,
         compute_metrics=compute_metrics,
         data_collator=default_data_collator,
+        callbacks=[FreezeTransformerCallback(training_args)]
     )
 
     # Training
