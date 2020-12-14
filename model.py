@@ -31,6 +31,9 @@ class RBERT(BertPreTrainedModel):
         assert not(self.args.skip_2_d1 and self.args.fc2_layer_output_size==0), "residual layer skipping fc1_d1 and fc2 cannot be set while fc2 is disabled (fc2_layer_output_size==0)"
         assert not(self.args.skip_2_d2 and self.args.fc2_layer_output_size==0), "residual layer skipping fc1_d2 and fc2 cannot be set while fc2 is disabled (fc2_layer_output_size==0)"
 
+        # add args to config so that it is logged in wandb
+        # FIXME: there should be a better way to do that (override BertConfig?)
+        config.rbert_args = self.args.__dict__
         self.bert = BertModel(config=config)  # Load pretrained bert
 
         self.num_labels = config.num_labels
