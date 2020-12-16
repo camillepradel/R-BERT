@@ -145,6 +145,12 @@ class ModelArguments:
             "help": "Add [SEP] token at the end of the sentence"
         },
     )
+    exclude_markup_tokens_from_masks: bool = field(
+        default=False,
+        metadata={
+            "help": "Exclude the markup tokens (<e1>... </e2>) from the entity masks."
+        },
+    )
     label_smoothing_epsilon: float = field(
         default=0.0,
         metadata={
@@ -299,6 +305,12 @@ def main():
             e12_p = example_input_ids.index(e1_end_id)  # the end position of entity1
             e21_p = example_input_ids.index(e2_start_id)  # the start position of entity2
             e22_p = example_input_ids.index(e2_end_id)  # the end position of entity2
+
+            if model_args.exclude_markup_tokens_from_masks:
+                e11_p += 1
+                e12_p -= 1
+                e21_p += 1
+                e22_p -= 1
 
             # e1 mask, e2 mask
             e1_mask = [0] * model_args.max_seq_length
