@@ -252,10 +252,10 @@ class RBERT(BertPreTrainedModel):
                 # loss = loss_fct(logits.view(-1), labels.view(-1))
                 raise Exception("Model does not support monoclass classification")
             else:
-                if self.config.rbert_args['label_smothing_epsilon'] == 0.0:
+                if self.config.rbert_args['label_smoothing_epsilon'] == 0.0:
                     loss_fct = nn.CrossEntropyLoss()
                 else:
-                    loss_fct = LabelSmoothingCrossEntropy(self.config.rbert_args['label_smothing_epsilon'])
+                    loss_fct = LabelSmoothingCrossEntropy(self.config.rbert_args['label_smoothing_epsilon'])
                 loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
 
             outputs = (loss,) + outputs

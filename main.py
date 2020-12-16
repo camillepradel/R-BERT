@@ -145,7 +145,7 @@ class ModelArguments:
             "help": "Add [SEP] token at the end of the sentence"
         },
     )
-    label_smothing_epsilon: float = field(
+    label_smoothing_epsilon: float = field(
         default=0.0,
         metadata={
             "help": "Epsilon used for label smoothing in loss function. "
