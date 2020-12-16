@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 from transformers import BertModel, BertPreTrainedModel
 
+from label_smoothing_loss import LabelSmoothingCrossEntropy
+
 
 class FCLayer(nn.Module):
     def __init__(self, input_dim, output_dim, dropout_rate=0.0, use_activation=True):
@@ -246,10 +248,14 @@ class RBERT(BertPreTrainedModel):
         # Softmax
         if labels is not None:
             if self.num_labels == 1:
-                loss_fct = nn.MSELoss()
-                loss = loss_fct(logits.view(-1), labels.view(-1))
+                # loss_fct = nn.MSELoss()
+                # loss = loss_fct(logits.view(-1), labels.view(-1))
+                raise Exception("Model does not support monoclass classification")
             else:
-                loss_fct = nn.CrossEntropyLoss()
+                if self.config.rbert_args['label_smothing_epsilon'] == 0.0:
+                    loss_fct = nn.CrossEntropyLoss()
+                else:
+                    loss_fct = LabelSmoothingCrossEntropy(self.config.rbert_args['label_smothing_epsilon'])
                 loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
 
             outputs = (loss,) + outputs
