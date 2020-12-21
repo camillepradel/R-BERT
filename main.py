@@ -56,7 +56,6 @@ class DataTrainingArguments:
         metadata={"help": "Label file"}
     )
 
-# TODO: should be logged and used for hyperparameter tunning in wandb
 @dataclass
 class ModelArguments:
     """
@@ -71,16 +70,30 @@ class ModelArguments:
         default=0.1,
         metadata={"help": "Dropout for fully-connected layers"}
         )
-    first_layer_to_use: int = field(
+    first_layer_d1: int = field(
         default=6,
         metadata={
-            "help": "The index of the lowest layer whose attention heads will be used for classification"
+            "help": "The index of the lowest layer whose depth-1 attention heads will be used for classification"
         },
     )
-    last_layer_to_use: int = field(
+    last_layer_d1: int = field(
         default=11,
         metadata={
-            "help": "The index of the highest layer whose attention heads will be used for classification"
+            "help": "The index of the highest layer whose depth-1 attention heads will be used for classification"
+        },
+    )
+    first_layer_d2: int = field(
+        default=6,
+        metadata={
+            "help": "The index of the lowest layer whose depth-2 attention heads will be used for classification"
+        },
+    )
+    second_to_last_layer_d2: int = field(
+        default=10,
+        metadata={
+            "help": "The index of the penultimate layer whose depth-2 attention heads will be used for classification. "
+            "Depth-2 attention heads will be used with following layer pairs: (first_layer_d2, first_layer_d2+1), "
+            "(first_layer_d2+1, first_layer_d2+2), ..., (second_to_last_layer_d2, second_to_last_layer_d2+1)"
         },
     )
     fc1_d1_layer_output_size: int = field(

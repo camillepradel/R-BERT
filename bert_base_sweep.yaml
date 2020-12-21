@@ -60,14 +60,22 @@ parameters:
     - 1000
     - 2000
     - 5000
-  first_layer_to_use:
+  first_layer_d1:
     distribution: int_uniform
     max: 7
     min: 1
-  last_layer_to_use:
+  last_layer_d1:
     distribution: int_uniform
     max: 11
     min: 8
+  first_layer_d2:
+    distribution: int_uniform
+    max: 7
+    min: 1
+  last_layer_d2:
+    distribution: int_uniform
+    max: 10
+    min: 6
   skip_1_d1:
     distribution: categorical
     values:
