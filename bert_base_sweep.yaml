@@ -1,0 +1,130 @@
+method: bayes
+metric:
+  goal: maximize
+  name: eval/f1
+parameters:
+  # adam_beta1:
+  #   distribution: uniform
+  #   max: 1.8
+  #   min: 0.45
+  # adam_beta2:
+  #   distribution: uniform
+  #   max: 1.998
+  #   min: 0.4995
+  # adam_epsilon:
+  #   distribution: uniform
+  #   max: 2e-08
+  #   min: 5e-09
+  learning_rate:
+    values:
+    - 2e-05
+    - 3e-05
+    - 4e-05
+    - 5e-05
+    - 6e-05
+  # max_grad_norm:
+  #   distribution: uniform
+  #   max: 2
+  #   min: 0.5
+  add_sep_token:
+    values:
+    - "true"
+    - "false"
+  exclude_markup_tokens_from_masks:
+    values:
+    - "true"
+    - "false"
+  dropout_rate:
+    values:
+    - 0.01
+    - 0.05
+    - 0.10
+    - 0.10
+    - 0.20
+  fc1_d1_layer_output_size:
+    values:
+    - 0
+    - 10
+    - 20
+    - 50
+    - 100
+  fc1_d2_layer_output_size:
+    values:
+    - 1000
+    - 2000
+    - 5000
+    - 10000
+  fc2_layer_output_size:
+    values:
+    - 500
+    - 1000
+    - 2000
+    - 5000
+  first_layer_to_use:
+    distribution: int_uniform
+    max: 7
+    min: 1
+  last_layer_to_use:
+    distribution: int_uniform
+    max: 11
+    min: 8
+  skip_1_d1:
+    distribution: categorical
+    values:
+    # - "true"
+    - "false"
+  skip_1_d2:
+    distribution: categorical
+    values:
+    - "true"
+    - "false"
+  skip_2_d1:
+    distribution: categorical
+    values:
+    # - "true"
+    - "false"
+  skip_2_d2:
+    distribution: categorical
+    values:
+    - "true"
+    - "false"
+  seed:
+    distribution: categorical
+    values:
+    - 0
+    # - 1
+    # - 2
+    # - 3
+  label_smoothing_epsilon:
+    values:
+    - 0.1
+    - 0.2
+    - 0.3
+    - 0.4
+program: main.py
+command:
+  - ${env}
+  - ${interpreter}
+  - ${program}
+  - --disable_tqdm
+  - true
+  - --do_train
+  - --do_eval
+  - --output_dir
+  - ./output
+  - --overwrite_output_dir
+  - --per_device_eval_batch_size
+  - 16
+  - --per_device_train_batch_size
+  - 8
+  - --evaluation_strategy
+  - epoch
+  - --model_name_or_path
+  - bert-base-uncased
+  - --run_name
+  - bert-base-uncased
+  - --save_steps
+  - 0
+  - --num_train_epochs
+  - 12
+  - ${args}
