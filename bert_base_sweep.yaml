@@ -18,7 +18,6 @@ parameters:
   learning_rate:
     values:
     - 3e-05
-    - 4e-05
   # max_grad_norm:
   #   distribution: uniform
   #   max: 2
@@ -27,6 +26,7 @@ parameters:
     values:
     - 0.0
     - 1.0
+    - 2.0
   add_sep_token:
     values:
     - "true"
@@ -40,46 +40,44 @@ parameters:
     - "avg_pooling_with_markups"
   dropout_rate:
     values:
-    # - 0.01
-    # - 0.05
-    - 0.10
+    - 0.15
     - 0.20
+    - 0.25
   label_smoothing_epsilon:
     values:
-    # - 0.1
-    - 0.2
-    - 0.3
-    # - 0.4
+    - 0.25
+    - 0.30
+    - 0.35
   fc1_d1_layer_output_size:
     values:
     - 20
     - 30
   fc1_d2_layer_output_size:
     values:
-    - 4000
     - 5000
     - 6000
+    - 7000
   fc2_layer_output_size:
     values:
-    - 4000
     - 5000
     - 6000
+    - 7000
   first_layer_d1:
     distribution: int_uniform
     max: 5
     min: 0
   last_layer_d1:
     distribution: int_uniform
-    max: 11
-    min: 8
+    max: 10
+    min: 9
   first_layer_d2:
     distribution: int_uniform
-    max: 5
+    max: 2
     min: 0
   second_to_last_layer_d2:
     distribution: int_uniform
     max: 10
-    min: 6
+    min: 9
   skip_1_d1:
     distribution: categorical
     values:
@@ -98,7 +96,7 @@ parameters:
   skip_2_d2:
     distribution: categorical
     values:
-    - "true"
+    # - "true"
     - "false"
   seed:
     distribution: categorical
