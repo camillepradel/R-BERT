@@ -31,10 +31,13 @@ parameters:
     values:
     - "true"
     # - "false"
-  exclude_markup_tokens_from_masks:
+  entity_mention:
     values:
-    - "true"
-    # - "false"
+    - "entity_start"
+    - "max_pooling",
+    - "max_pooling_with_markups",
+    - "avg_pooling",
+    - "avg_pooling_with_markups"
   dropout_rate:
     values:
     # - 0.01

@@ -158,11 +158,15 @@ class ModelArguments:
             "help": "Add [SEP] token at the end of the sentence"
         },
     )
-    exclude_markup_tokens_from_masks: bool = field(
-        default=False,
+    entity_mention: str = field(
+        default="avg_pooling",
         metadata={
-            "help": "Exclude the markup tokens (<e1>... </e2>) from the entity masks."
-        },
+            "help": (
+                "Which tokens are considered to build entity mention representations. "
+                "Possible values: 'max_pooling', 'max_pooling_with_markups', 'avg_pooling', "
+                "'avg_pooling_with_markups', 'entity_start'"
+            )
+        }
     )
     label_smoothing_epsilon: float = field(
         default=0.0,
@@ -296,6 +300,16 @@ def main():
     # Preprocessing the datasets
 
     def preprocess_function(examples):
+
+        allowed_entity_mention_values = [
+            'entity_start',
+            'max_pooling',
+            'max_pooling_with_markups',
+            'avg_pooling',
+            'avg_pooling_with_markups',
+        ]
+        assert model_args.entity_mention in allowed_entity_mention_values, f"entity_mention parameter must be an allowed value: {allowed_entity_mention_values}"
+
         # Tokenize the texts
         result = tokenizer(examples['sentence'], padding="max_length", max_length=model_args.max_seq_length, truncation=True)
 
@@ -315,15 +329,19 @@ def main():
                 result['attention_mask'][i][i_sep_token] = 0
 
             e11_p = example_input_ids.index(e1_start_id)  # the start position of entity1
-            e12_p = example_input_ids.index(e1_end_id)  # the end position of entity1
             e21_p = example_input_ids.index(e2_start_id)  # the start position of entity2
-            e22_p = example_input_ids.index(e2_end_id)  # the end position of entity2
 
-            if model_args.exclude_markup_tokens_from_masks:
-                e11_p += 1
-                e12_p -= 1
-                e21_p += 1
-                e22_p -= 1
+            if model_args.entity_mention == 'entity_start':
+                e12_p = e11_p
+                e22_p = e21_p
+            else:
+                e12_p = example_input_ids.index(e1_end_id)  # the end position of entity1
+                e22_p = example_input_ids.index(e2_end_id)  # the end position of entity2
+                if not model_args.entity_mention.endswith('with_markups'):
+                    e11_p += 1
+                    e12_p -= 1
+                    e21_p += 1
+                    e22_p -= 1
 
             # e1 mask, e2 mask
             e1_mask = [0] * model_args.max_seq_length
