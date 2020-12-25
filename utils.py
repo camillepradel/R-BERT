@@ -1,10 +1,6 @@
-import logging
 import os
-import random
 import fileinput
 
-import numpy as np
-import torch
 from transformers import AutoTokenizer, AutoConfig
 
 from official_eval import official_f1

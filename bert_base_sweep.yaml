@@ -34,9 +34,9 @@ parameters:
   entity_mention:
     values:
     - "entity_start"
-    - "max_pooling",
-    - "max_pooling_with_markups",
-    - "avg_pooling",
+    - "max_pooling"
+    - "max_pooling_with_markups"
+    - "avg_pooling"
     - "avg_pooling_with_markups"
   dropout_rate:
     values:
