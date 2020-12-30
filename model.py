@@ -280,7 +280,7 @@ class RBERT(BertPreTrainedModel):
                     (
                         torch.arange(0, self.args.max_seq_length, 1.0/self.args.max_seq_length).type(torch.LongTensor).unsqueeze(0),
                         torch.arange(self.args.max_seq_length).type(torch.LongTensor).repeat(self.args.max_seq_length).unsqueeze(0),
-                    ), 0) # 2, max_seq_length*max_seq_length
+                    ), 0).to(attentions.device) # 2, max_seq_length*max_seq_length
                 edge_attr = example_attentions.permute(1, 2, 0).reshape(-1, self.num_attention_heads) # max_seq_length*max_seq_length, heads_count
                 data = Data(x=x, edge_index=edge_index, edge_attr=edge_attr)
                 data_list.append(data)
