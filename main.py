@@ -62,6 +62,13 @@ class ModelArguments:
     Arguments pertaining to which model we are going to fine-tune from.
     """
 
+    # feed forward neural network 
+    use_ffnn: bool = field(
+        default=False,
+        metadata={
+            "help": "Use feed forward neural network on attention heads"
+        },
+    )
     model_name_or_path: str = field(
         default="bert-base-uncased",
         metadata={"help": "Path to pretrained model or model identifier from huggingface.co/models"}
@@ -173,6 +180,32 @@ class ModelArguments:
         metadata={
             "help": "Epsilon used for label smoothing in loss function. "
             "Set to 0 to disable label smoothing."
+        },
+    )
+    # Graph Convolutional Network
+    use_gcn: bool = field(
+        default=False,
+        metadata={
+            "help": "Use Convolutional Graph Network on attention heads"
+        },
+    )
+    # TODO: actually take into account first_layer_conv and last_layer_conv (instead of using last layer)
+    first_layer_conv: int = field(
+        default=6,
+        metadata={
+            "help": "The index of the lowest layer whose attention heads will be used in Convolutional Graph Network"
+        },
+    )
+    last_layer_conv: int = field(
+        default=11,
+        metadata={
+            "help": "The index of the highest layer whose attention heads will be used in Convolutional Graph Network"
+        },
+    )
+    gcn_hidden_size: int = field(
+        default=200,
+        metadata={
+            "help": ""
         },
     )
 

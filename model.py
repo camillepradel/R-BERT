@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 from transformers import BertModel, BertPreTrainedModel
+from torch_geometric.data import Data, Batch
+from torch_geometric.nn import CGConv # GCNConv
 
 from label_smoothing_loss import LabelSmoothingCrossEntropy
 
@@ -18,6 +20,22 @@ class FCLayer(nn.Module):
         if self.use_activation:
             x = self.tanh(x)
         return self.linear(x)
+
+
+class GCLayer(nn.Module):
+    def __init__(self, input_dim, output_dim, edge_attr_size, dropout_rate=0.0, use_activation=True):
+        super(GCLayer, self).__init__()
+        self.use_activation = use_activation
+        self.conv = CGConv((input_dim, output_dim), edge_attr_size)
+        self.dropout = nn.Dropout(dropout_rate)
+        self.relu = nn.ReLU()
+
+    def forward(self, x, edge_index, edge_attr):
+        x = self.dropout(x) # not used (set to zero) in original example
+        x = self.conv(x=x, edge_index=edge_index, edge_attr=edge_attr)
+        if self.use_activation:
+            x = self.relu(x)
+        return x
 
 
 class RBERT(BertPreTrainedModel):
@@ -42,45 +60,58 @@ class RBERT(BertPreTrainedModel):
         self.bert = BertModel(config=config)  # Load pretrained bert
 
         self.num_labels = config.num_labels
-        self.layers_d1 = list(range(self.args.first_layer_d1, self.args.last_layer_d1+1))
-        self.layers_d2 = [l for l in (range(self.args.first_layer_d2, self.args.second_to_last_layer_d2+1))]
+        self.num_attention_heads = config.num_attention_heads
 
-        self.entity_pooling_mode = 'avg' if self.args.entity_mention.startswith('avg_pooling') else 'max'
+        if args.use_ffnn:
+            self.layers_d1 = list(range(self.args.first_layer_d1, self.args.last_layer_d1+1))
+            self.layers_d2 = [l for l in (range(self.args.first_layer_d2, self.args.second_to_last_layer_d2+1))]
 
-        # fc layer applied to depth-1 attentions
-        fc1_d1_layer_input_size = len(self.layers_d1) * config.num_attention_heads * 2
-        if self.args.fc1_d1_layer_output_size > 0:
-            fc1_d1_layer_output_size = self.args.fc1_d1_layer_output_size
-            self.fc1_d1_layer = FCLayer(fc1_d1_layer_input_size, fc1_d1_layer_output_size, self.args.dropout_rate)
-        else:
-            fc1_d1_layer_output_size = fc1_d1_layer_input_size
+            self.entity_pooling_mode = 'avg' if self.args.entity_mention.startswith('avg_pooling') else 'max'
 
-        # fc layer applied to depth-2 attentions
-        fc1_d2_layer_input_size = len(self.layers_d2) * config.num_attention_heads * config.num_attention_heads * 2
-        if self.args.fc1_d2_layer_output_size > 0:
-            fc1_d2_layer_output_size = self.args.fc1_d2_layer_output_size
-            self.fc1_d2_layer = FCLayer(fc1_d2_layer_input_size, fc1_d2_layer_output_size, self.args.dropout_rate)
-        else:
-            fc1_d2_layer_output_size = fc1_d2_layer_input_size
+            # fc layer applied to depth-1 attentions
+            fc1_d1_layer_input_size = len(self.layers_d1) * config.num_attention_heads * 2
+            if self.args.fc1_d1_layer_output_size > 0:
+                fc1_d1_layer_output_size = self.args.fc1_d1_layer_output_size
+                self.fc1_d1_layer = FCLayer(fc1_d1_layer_input_size, fc1_d1_layer_output_size, self.args.dropout_rate)
+            else:
+                fc1_d1_layer_output_size = fc1_d1_layer_input_size
 
-        # fc layer applied to first fc layers output (or to attentions if the latter are disabled)
-        fc2_layer_input_size = fc1_d1_layer_output_size + fc1_d2_layer_output_size
-        if self.args.skip_1_d1:
-            fc2_layer_input_size += fc1_d1_layer_input_size
-        if self.args.skip_1_d2:
-            fc2_layer_input_size += fc1_d2_layer_input_size
-        if self.args.fc2_layer_output_size > 0:
-            fc2_layer_output_size = self.args.fc2_layer_output_size
-            self.fc2_layer = FCLayer(fc2_layer_input_size, fc2_layer_output_size, self.args.dropout_rate)
-        else:
-            fc2_layer_output_size = fc2_layer_input_size
+            # fc layer applied to depth-2 attentions
+            fc1_d2_layer_input_size = len(self.layers_d2) * config.num_attention_heads * config.num_attention_heads * 2
+            if self.args.fc1_d2_layer_output_size > 0:
+                fc1_d2_layer_output_size = self.args.fc1_d2_layer_output_size
+                self.fc1_d2_layer = FCLayer(fc1_d2_layer_input_size, fc1_d2_layer_output_size, self.args.dropout_rate)
+            else:
+                fc1_d2_layer_output_size = fc1_d2_layer_input_size
 
-        # final layer: label classifier
-        label_classifier_input_size = fc2_layer_output_size
-        if self.args.skip_2_d1:
-            label_classifier_input_size += fc1_d1_layer_input_size
-        if self.args.skip_2_d2:
-            label_classifier_input_size += fc1_d2_layer_input_size
+            # fc layer applied to first fc layers output (or to attentions if the latter are disabled)
+            fc2_layer_input_size = fc1_d1_layer_output_size + fc1_d2_layer_output_size
+            if self.args.skip_1_d1:
+                fc2_layer_input_size += fc1_d1_layer_input_size
+            if self.args.skip_1_d2:
+                fc2_layer_input_size += fc1_d2_layer_input_size
+            if self.args.fc2_layer_output_size > 0:
+                fc2_layer_output_size = self.args.fc2_layer_output_size
+                self.fc2_layer = FCLayer(fc2_layer_input_size, fc2_layer_output_size, self.args.dropout_rate)
+            else:
+                fc2_layer_output_size = fc2_layer_input_size
+
+            # final layer: label classifier
+            label_classifier_input_size = fc2_layer_output_size
+            if self.args.skip_2_d1:
+                label_classifier_input_size += fc1_d1_layer_input_size
+            if self.args.skip_2_d2:
+                label_classifier_input_size += fc1_d2_layer_input_size
+        
+        elif args.use_gcn:
+            self.layers_conv = list(range(self.args.first_layer_conv, self.args.last_layer_conv+1))
+            # FIXME: following linear layer is used to change dimension because CGConv doesn't seem to work with different input and output sizes
+            self.linear_before_conv = nn.Linear(config.hidden_size, self.args.gcn_hidden_size)
+            self.conv_layer_1 = GCLayer(self.args.gcn_hidden_size, self.args.gcn_hidden_size, config.num_attention_heads, self.args.dropout_rate)
+            self.conv_layer_2 = GCLayer(self.args.gcn_hidden_size, self.args.gcn_hidden_size, config.num_attention_heads, self.args.dropout_rate)
+            self.conv_layer_3 = GCLayer(self.args.gcn_hidden_size, self.args.gcn_hidden_size, config.num_attention_heads, self.args.dropout_rate)
+            label_classifier_input_size = self.args.gcn_hidden_size*2
+
         self.label_classifier = FCLayer(
             label_classifier_input_size,
             config.num_labels,
@@ -163,7 +194,7 @@ class RBERT(BertPreTrainedModel):
     def forward(self, input_ids, attention_mask, token_type_ids, labels, e1_mask, e2_mask):
         outputs = self.bert(
             input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids,
-            return_dict=True, output_attentions=True
+            return_dict=True, output_attentions=True, output_hidden_states=self.args.use_gcn
         )  # sequence_output, pooled_output, (hidden_states), (attentions)
 
 
@@ -171,65 +202,109 @@ class RBERT(BertPreTrainedModel):
                                            # each tensor is of shape batch_size, heads_count, max_seq_length, max_seq_length
         attentions = torch.stack(attentions) # layers_count, batch_size, heads_count, max_seq_length, max_seq_length
 
-        # select layers whose attention heads will be used for classification
-        attentions_d1 = attentions[self.layers_d1] # layers_d1_count, batch_size, heads_count, max_seq_length, max_seq_length
-        attentions_d2 = attentions[self.layers_d2 + [self.args.second_to_last_layer_d2+1]] # (layers_d2_count+1), batch_size, heads_count, max_seq_length, max_seq_length
+        if self.args.use_ffnn:
+            # select layers whose attention heads will be used for classification
+            attentions_d1 = attentions[self.layers_d1] # layers_d1_count, batch_size, heads_count, max_seq_length, max_seq_length
+            attentions_d2 = attentions[self.layers_d2 + [self.args.second_to_last_layer_d2+1]] # (layers_d2_count+1), batch_size, heads_count, max_seq_length, max_seq_length
 
-        # permute dimensions
-        attentions_d1 = attentions_d1.permute(1, 3, 4, 0, 2) # batch_size, max_seq_length, max_seq_length, layers_d1_count, heads_count
-        attentions_d2 = attentions_d2.permute(1, 3, 4, 0, 2) # batch_size, max_seq_length, max_seq_length, (layers_d2_count+1), heads_count
+            # permute dimensions
+            attentions_d1 = attentions_d1.permute(1, 3, 4, 0, 2) # batch_size, max_seq_length, max_seq_length, layers_d1_count, heads_count
+            attentions_d2 = attentions_d2.permute(1, 3, 4, 0, 2) # batch_size, max_seq_length, max_seq_length, (layers_d2_count+1), heads_count
 
-        # depth-1 attentions between entities
-        e1_to_e2_attentions_d1 = self.entity_to_entity_attentions_depth1(attentions_d1, e1_mask, e2_mask, self.entity_pooling_mode) # batch_size, layers_d1_count, heads_count
-        e2_to_e1_attentions_d1 = self.entity_to_entity_attentions_depth1(attentions_d1, e2_mask, e1_mask, self.entity_pooling_mode) # batch_size, layers_d1_count, heads_count
+            # depth-1 attentions between entities
+            e1_to_e2_attentions_d1 = self.entity_to_entity_attentions_depth1(attentions_d1, e1_mask, e2_mask, self.entity_pooling_mode) # batch_size, layers_d1_count, heads_count
+            e2_to_e1_attentions_d1 = self.entity_to_entity_attentions_depth1(attentions_d1, e2_mask, e1_mask, self.entity_pooling_mode) # batch_size, layers_d1_count, heads_count
 
-        # depth-2 attentions between entities
-        e1_to_e2_attentions_d2 = self.entity_to_entity_attentions_depth2(attentions_d2, e1_mask, e2_mask, self.entity_pooling_mode) # batch_size, max_seq_length, layers_d2_count, heads_count, heads_count
-        e2_to_e1_attentions_d2 = self.entity_to_entity_attentions_depth2(attentions_d2, e2_mask, e1_mask, self.entity_pooling_mode) # batch_size, max_seq_length, layers_d2_count, heads_count, heads_count
+            # depth-2 attentions between entities
+            e1_to_e2_attentions_d2 = self.entity_to_entity_attentions_depth2(attentions_d2, e1_mask, e2_mask, self.entity_pooling_mode) # batch_size, max_seq_length, layers_d2_count, heads_count, heads_count
+            e2_to_e1_attentions_d2 = self.entity_to_entity_attentions_depth2(attentions_d2, e2_mask, e1_mask, self.entity_pooling_mode) # batch_size, max_seq_length, layers_d2_count, heads_count, heads_count
 
-        # fc layer applied to depth-1 attentions
-        e1_to_e2_attentions_d1 = e1_to_e2_attentions_d1.reshape(e1_to_e2_attentions_d1.shape[0], -1) # batch_size, layers_d1_count*heads_count
-        e2_to_e1_attentions_d1 = e2_to_e1_attentions_d1.reshape(e2_to_e1_attentions_d1.shape[0], -1) # batch_size, layers_d1_count*heads_count
-        attentions_d1 = torch.cat((e1_to_e2_attentions_d1, e2_to_e1_attentions_d1), 1) # batch_size, layers_d1_count*heads_count*2
-        if self.args.fc1_d1_layer_output_size > 0:
-            fc1_output_d1 = self.fc1_d1_layer(attentions_d1) # batch_size, fc1_d1_layer_output_size
-        else:
-            fc1_output_d1 = attentions_d1 # batch_size, layers_d1_count*heads_count*2 (batch_size, fc1_d1_layer_output_size)
+            # fc layer applied to depth-1 attentions
+            e1_to_e2_attentions_d1 = e1_to_e2_attentions_d1.reshape(e1_to_e2_attentions_d1.shape[0], -1) # batch_size, layers_d1_count*heads_count
+            e2_to_e1_attentions_d1 = e2_to_e1_attentions_d1.reshape(e2_to_e1_attentions_d1.shape[0], -1) # batch_size, layers_d1_count*heads_count
+            attentions_d1 = torch.cat((e1_to_e2_attentions_d1, e2_to_e1_attentions_d1), 1) # batch_size, layers_d1_count*heads_count*2
+            if self.args.fc1_d1_layer_output_size > 0:
+                fc1_output_d1 = self.fc1_d1_layer(attentions_d1) # batch_size, fc1_d1_layer_output_size
+            else:
+                fc1_output_d1 = attentions_d1 # batch_size, layers_d1_count*heads_count*2 (batch_size, fc1_d1_layer_output_size)
 
-        # fc layer applied to depth-2 attentions with max pooling along tokens
-        e1_to_e2_attentions_d2 = e1_to_e2_attentions_d2.reshape(e1_to_e2_attentions_d2.shape[0], e1_to_e2_attentions_d2.shape[1], -1) # batch_size, max_seq_length, layers_d2_count*heads_count*heads_count
-        e2_to_e1_attentions_d2 = e2_to_e1_attentions_d2.reshape(e2_to_e1_attentions_d2.shape[0], e2_to_e1_attentions_d2.shape[1], -1) # batch_size, max_seq_length, layers_d2_count*heads_count*heads_count
-        attentions_d2 = torch.cat((e1_to_e2_attentions_d2, e2_to_e1_attentions_d2), 2) # batch_size, max_seq_length, layers_d2_count*heads_count*heads_count*2
-        if self.args.fc1_d2_layer_output_size > 0:
-            fc1_output_d2 = self.fc1_d2_layer(attentions_d2) # batch_size, max_seq_length, fc1_d2_layer_output_size
-        else:
-            fc1_output_d2 = attentions_d2 # batch_size, max_seq_length, layers_d2_count*heads_count*heads_count*2 (batch_size, max_seq_length, fc1_d2_layer_output_size)
-        fc1_output_d2 = torch.amax(fc1_output_d2, dim=1) # batch_size, fc1_d2_layer_output_size
+            # fc layer applied to depth-2 attentions with max pooling along tokens
+            e1_to_e2_attentions_d2 = e1_to_e2_attentions_d2.reshape(e1_to_e2_attentions_d2.shape[0], e1_to_e2_attentions_d2.shape[1], -1) # batch_size, max_seq_length, layers_d2_count*heads_count*heads_count
+            e2_to_e1_attentions_d2 = e2_to_e1_attentions_d2.reshape(e2_to_e1_attentions_d2.shape[0], e2_to_e1_attentions_d2.shape[1], -1) # batch_size, max_seq_length, layers_d2_count*heads_count*heads_count
+            attentions_d2 = torch.cat((e1_to_e2_attentions_d2, e2_to_e1_attentions_d2), 2) # batch_size, max_seq_length, layers_d2_count*heads_count*heads_count*2
+            if self.args.fc1_d2_layer_output_size > 0:
+                fc1_output_d2 = self.fc1_d2_layer(attentions_d2) # batch_size, max_seq_length, fc1_d2_layer_output_size
+            else:
+                fc1_output_d2 = attentions_d2 # batch_size, max_seq_length, layers_d2_count*heads_count*heads_count*2 (batch_size, max_seq_length, fc1_d2_layer_output_size)
+            fc1_output_d2 = torch.amax(fc1_output_d2, dim=1) # batch_size, fc1_d2_layer_output_size
 
-        # get pooled depth-2 attentions if it needs to be used in a skip connection
-        if self.args.skip_1_d2 or self.args.skip_2_d2:
-            pooled_attentions_d2 = torch.amax(attentions_d2, dim=1) # batch_size, layers_d2_count*heads_count*heads_count*2
+            # get pooled depth-2 attentions if it needs to be used in a skip connection
+            if self.args.skip_1_d2 or self.args.skip_2_d2:
+                pooled_attentions_d2 = torch.amax(attentions_d2, dim=1) # batch_size, layers_d2_count*heads_count*heads_count*2
 
-        # fc layer applied to first fc layers output (or to attentions if the latter are disabled)
-        fc2_input = torch.cat((fc1_output_d1, fc1_output_d2), 1) # batch_size, fc1_d1_layer_output_size+fc1_d2_layer_output_size
-        if self.args.skip_1_d1:
-            fc2_input = torch.cat((fc2_input, attentions_d1), 1)
-        if self.args.skip_1_d2:
-            fc2_input = torch.cat((fc2_input, pooled_attentions_d2), 1)
-        if self.args.fc2_layer_output_size > 0:
-            fc2_output = self.fc2_layer(fc2_input) # batch_size, fc2_layer_output_size
-        else:
-            fc2_output = fc2_input # batch_size, fc2_layer_output_size
+            # fc layer applied to first fc layers output (or to attentions if the latter are disabled)
+            fc2_input = torch.cat((fc1_output_d1, fc1_output_d2), 1) # batch_size, fc1_d1_layer_output_size+fc1_d2_layer_output_size
+            if self.args.skip_1_d1:
+                fc2_input = torch.cat((fc2_input, attentions_d1), 1)
+            if self.args.skip_1_d2:
+                fc2_input = torch.cat((fc2_input, pooled_attentions_d2), 1)
+            if self.args.fc2_layer_output_size > 0:
+                fc2_output = self.fc2_layer(fc2_input) # batch_size, fc2_layer_output_size
+            else:
+                fc2_output = fc2_input # batch_size, fc2_layer_output_size
+                
+
+            # final layer: label classifier
+            label_classifier_input = fc2_output # batch_size, fc2_layer_output_size
+            if self.args.skip_2_d1:
+                label_classifier_input = torch.cat((label_classifier_input, attentions_d1), 1)
+            if self.args.skip_2_d2:
+                label_classifier_input = torch.cat((label_classifier_input, pooled_attentions_d2), 1)
+
+        elif self.args.use_gcn:
+            # build network using attention heads
+            attentions = attentions[11] # 1, batch_size, heads_count, max_seq_length, max_seq_length
+            attentions = attentions.squeeze(0) # batch_size, heads_count, max_seq_length, max_seq_length
+            hidden_states = outputs['hidden_states'] # tuple of layers_count+1 tensors
+                                                     # each tensor is of shape batch_size, max_seq_length, hidden_size
+            hidden_states = torch.stack(hidden_states) # layers_count+1, batch_size, max_seq_length, hidden_size
+            hidden_states = hidden_states[12] # 1, batch_size, max_seq_length, hidden_size
+            hidden_states = hidden_states.squeeze(0) # batch_size, max_seq_length, hidden_size
+            hidden_states = self.linear_before_conv(hidden_states) # batch_size, max_seq_length, gcn_hidden_size
+            data_list = []
+            for i_example in range(attentions.shape[0]):
+                example_attentions = attentions[i_example] # heads_count, max_seq_length, max_seq_length
+                example_hidden_states = hidden_states[i_example] # max_seq_length, hidden_size
+                x = example_hidden_states # max_seq_length, hidden_size
+                edge_index = torch.cat(
+                    (
+                        torch.arange(0, self.args.max_seq_length, 1.0/self.args.max_seq_length).type(torch.LongTensor).unsqueeze(0),
+                        torch.arange(self.args.max_seq_length).type(torch.LongTensor).repeat(self.args.max_seq_length).unsqueeze(0),
+                    ), 0) # 2, max_seq_length*max_seq_length
+                edge_attr = example_attentions.permute(1, 2, 0).reshape(-1, self.num_attention_heads) # max_seq_length*max_seq_length, heads_count
+                data = Data(x=x, edge_index=edge_index, edge_attr=edge_attr)
+                data_list.append(data)
+
+            grap_batch = Batch.from_data_list(data_list)
+
+            x, edge_index, edge_attr = grap_batch.x, grap_batch.edge_index, grap_batch.edge_attr
+            # x: max_seq_length*batch_size, gcn_hidden_size
+            # edge_index: 2, max_seq_length*max_seq_length*batch_size
+            # edge_attr: max_seq_length*max_seq_length*batch_size, heads_count
+            x = self.conv_layer_1(x=x, edge_index=edge_index, edge_attr=edge_attr) # max_seq_length*batch_size, gcn_hidden_size
+            x = self.conv_layer_2(x=x, edge_index=edge_index, edge_attr=edge_attr) # max_seq_length*batch_size, gcn_hidden_size
+            x = self.conv_layer_3(x=x, edge_index=edge_index, edge_attr=edge_attr) # max_seq_length*batch_size, gcn_hidden_size
+
+            x = x.reshape(-1, self.args.max_seq_length, self.args.gcn_hidden_size) # batch_size, max_seq_length, gcn_hidden_size
+            e1_mask = e1_mask.unsqueeze(2) # batch_size, max_seq_length, 1
+            e1_masked_x = x * e1_mask # batch_size, max_seq_length, gcn_hidden_size
+            e1_output = torch.max(e1_masked_x, dim=1).values # batch_size, gcn_hidden_size
+            e2_mask = e2_mask.unsqueeze(2) # batch_size, max_seq_length, 1
+            e2_masked_x = x * e2_mask # batch_size, max_seq_length, gcn_hidden_size
+            e2_output = torch.max(e2_masked_x, dim=1).values # batch_size, gcn_hidden_size
+            label_classifier_input = torch.cat((e1_output, e2_output), dim=1) # batch_size, gcn_hidden_size*2
             
-
-        # final layer: label classifier
-        label_classifier_input = fc2_output # batch_size, fc2_layer_output_size
-        if self.args.skip_2_d1:
-            label_classifier_input = torch.cat((label_classifier_input, attentions_d1), 1)
-        if self.args.skip_2_d2:
-            label_classifier_input = torch.cat((label_classifier_input, pooled_attentions_d2), 1)
         logits = self.label_classifier(label_classifier_input) # batch_size, num_labels
-
         outputs = (logits,)
 
         # Softmax
