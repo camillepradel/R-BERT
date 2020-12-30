@@ -17,6 +17,7 @@ from transformers import (
     default_data_collator,
     HfArgumentParser,
     TrainerCallback,
+    AdamW,
 )
 from transformers.trainer_utils import is_main_process
 from datasets import load_dataset
@@ -220,8 +221,12 @@ class RBertTrainingArguments(TrainingArguments):
         default="./eval",
         metadata={"help": "Evaluation script, result directory"}
     )
+    gcn_learning_rate: float = field(
+        default=0.0,
+        metadata={"help": "The initial learning rate for GCN parameters"}
+    )
     # override default values from TrainingArguments
-    learning_rate: float = field(default=2e-5, metadata={"help": "The initial learning rate for Adam."})
+    learning_rate: float = field(default=2e-5, metadata={"help": "The initial learning rate for Bert parameters."})
     num_train_epochs: float = field(default=10.0, metadata={"help": "Total number of training epochs to perform."})
 
 
@@ -425,6 +430,44 @@ def main():
             "f1": official_f1(),
         }
 
+    # build custom optimizer to set different lr for transformer and CGN
+    no_decay = ["bias", "LayerNorm.weight"]
+    gcn_lr = ['conv_layer']
+    optimizer_grouped_parameters = [
+        {
+            "params": [p for n, p in model.named_parameters()
+                if not  any(nd in n for nd in gcn_lr)
+                    and not any(nd in n for nd in no_decay)],
+            "weight_decay": training_args.weight_decay,
+        },
+        {
+            "params": [p for n, p in model.named_parameters()
+                if not  any(nd in n for nd in gcn_lr)
+                    and any(nd in n for nd in no_decay)],
+            "weight_decay": 0.0,
+        },
+        {
+            "params": [p for n, p in model.named_parameters()
+                if  any(nd in n for nd in gcn_lr)
+                    and not any(nd in n for nd in no_decay)],
+            "weight_decay": training_args.weight_decay,
+            "lr": training_args.gcn_learning_rate,
+        },
+        {
+            "params": [p for n, p in model.named_parameters()
+                if any(nd in n for nd in gcn_lr)
+                    and any(nd in n for nd in no_decay)],
+            "weight_decay": 0.0,
+            "lr": training_args.gcn_learning_rate,
+        },
+    ]
+    optimizer = AdamW(
+        optimizer_grouped_parameters,
+        lr=training_args.learning_rate,
+        betas=(training_args.adam_beta1, training_args.adam_beta2),
+        eps=training_args.adam_epsilon,
+    )
+
     trainer = Trainer(
         model=model,
         args=training_args,
@@ -432,7 +475,8 @@ def main():
         eval_dataset=eval_dataset,
         compute_metrics=compute_metrics,
         data_collator=default_data_collator,
-        callbacks=[FreezeTransformerCallback(training_args)]
+        callbacks=[FreezeTransformerCallback(training_args)],
+        optimizers=(optimizer, None),
     )
 
     # Training
