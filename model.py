@@ -267,7 +267,8 @@ class RBERT(BertPreTrainedModel):
         elif self.args.use_gcn:
             # build network using attention heads
             attentions = attentions[self.attention_layers_conv] # attention_layers_conv_count, batch_size, heads_count, max_seq_length, max_seq_length
-            attentions = attentions.detach() # do not back propagate gradient (TODO: activate this behaviour through a parameter)
+            if self.args.conv_detach_attentions:
+                attentions = attentions.detach() # do not back propagate gradient
 
             hidden_states = outputs['hidden_states'] # tuple of layers_count+1 tensors
                                                      # each tensor is of shape batch_size, max_seq_length, hidden_size

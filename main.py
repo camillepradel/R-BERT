@@ -190,7 +190,6 @@ class ModelArguments:
             "help": "Use Convolutional Graph Network on attention heads"
         },
     )
-    # TODO: actually take into account first_layer_conv and last_layer_conv (instead of using last layer)
     first_layer_conv: int = field(
         default=6,
         metadata={
@@ -207,6 +206,12 @@ class ModelArguments:
         default=200,
         metadata={
             "help": ""
+        },
+    )
+    conv_detach_attentions: bool = field(
+        default=False,
+        metadata={
+            "help": "Do not back propagate gradient from conv layers to attentions."
         },
     )
 
