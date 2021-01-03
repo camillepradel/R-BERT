@@ -222,7 +222,7 @@ class RBertTrainingArguments(TrainingArguments):
         metadata={"help": "Evaluation script, result directory"}
     )
     gcn_learning_rate: float = field(
-        default=0.0,
+        default=0.01,
         metadata={"help": "The initial learning rate for GCN parameters"}
     )
     # override default values from TrainingArguments
