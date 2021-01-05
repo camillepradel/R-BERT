@@ -191,7 +191,7 @@ class ModelArguments:
         },
     )
     first_layer_conv: int = field(
-        default=6,
+        default=10,
         metadata={
             "help": "The index of the lowest layer whose attention heads will be used in Convolutional Graph Network"
         },
@@ -202,16 +202,22 @@ class ModelArguments:
             "help": "The index of the highest layer whose attention heads will be used in Convolutional Graph Network"
         },
     )
-    gcn_hidden_size: int = field(
-        default=200,
-        metadata={
-            "help": ""
-        },
-    )
+    # gcn_hidden_size: int = field(
+    #     default=200,
+    #     metadata={
+    #         "help": ""
+    #     },
+    # )
     conv_detach_attentions: bool = field(
         default=False,
         metadata={
             "help": "Do not back propagate gradient from conv layers to attentions."
+        },
+    )
+    conv_use_symetric_relations: bool = field(
+        default=False,
+        metadata={
+            "help": "Add symetric relations to graph"
         },
     )
 
