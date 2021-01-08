@@ -327,9 +327,6 @@ class RBERT(BertPreTrainedModel):
                 for i_attention_layer in range(self.attention_layers_conv_count):
                     grap_batch = grap_batches[i_attention_layer]
                     x, edge_index, edge_attr = grap_batch.x, grap_batch.edge_index, grap_batch.edge_attr
-                    print('x.device', x.device)
-                    print('edge_index.device', edge_index.device)
-                    print('edge_attr.device', edge_attr.device)
                     # x: batch_size*2*max_seq_length, gcn_hidden_size
                     # edge_index: 2, batch_size*max_seq_length*max_seq_length (*2 if self.args.conv_use_symetric_relations)
                     # edge_attr: batch_size*max_seq_length*max_seq_length (*2 if self.args.conv_use_symetric_relations), heads_count
