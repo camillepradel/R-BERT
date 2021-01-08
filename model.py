@@ -275,7 +275,8 @@ class RBERT(BertPreTrainedModel):
             batch_size = attentions.shape[1]
 
             # TODO? use actual values from outputs['hidden_states']
-            xs = torch.ones(batch_size,self.attention_layers_conv_count+1, self.args.max_seq_length, self.args.gcn_hidden_size) \
+            xs = torch.FloatTensor([1 / ((self.attention_layers_conv_count+1) * self.args.max_seq_length * self.args.gcn_hidden_size)]) \
+                        .repeat(batch_size,self.attention_layers_conv_count+1, self.args.max_seq_length, self.args.gcn_hidden_size) \
                         .to(attentions.device) # batch_size, attention_layers_conv_count+1, max_seq_length, gcn_hidden_size
 
             # list of attention_layers_conv_count batches
@@ -293,6 +294,7 @@ class RBERT(BertPreTrainedModel):
                                                     1.0/self.args.max_seq_length) \
                                                     .type(torch.LongTensor) \
                                                     .to(attentions.device) # max_seq_length*max_seq_length
+                    attending_tokens = attending_tokens + self.args.max_seq_length
                     attended_tokens = torch.arange(self.args.max_seq_length) \
                                         .type(torch.LongTensor) \
                                         .to(attentions.device) \
@@ -330,9 +332,10 @@ class RBERT(BertPreTrainedModel):
                     # x: batch_size*2*max_seq_length, gcn_hidden_size
                     # edge_index: 2, batch_size*max_seq_length*max_seq_length (*2 if self.args.conv_use_symetric_relations)
                     # edge_attr: batch_size*max_seq_length*max_seq_length (*2 if self.args.conv_use_symetric_relations), heads_count
-                    x = self.conv_layers[i_hop][i_attention_layer](x=x, edge_index=edge_index, edge_attr=edge_attr) # batch_size*max_seq_length, gcn_hidden_size
+                    grap_batch.x = self.conv_layers[i_hop][i_attention_layer](x=x, edge_index=edge_index, edge_attr=edge_attr) # batch_size*max_seq_length, gcn_hidden_size
 
-            x = xs[:, -1] # batch_size, max_seq_length, gcn_hidden_size
+            x = grap_batches[-1].x.reshape(batch_size, 2*self.args.max_seq_length, self.args.gcn_hidden_size)
+            x = x[:, :self.args.max_seq_length, :] # batch_size, max_seq_length, gcn_hidden_size
             e1_mask = e1_mask.unsqueeze(2) # batch_size, max_seq_length, 1
             e1_masked_x = x * e1_mask # batch_size, max_seq_length, gcn_hidden_size
             e1_output = torch.max(e1_masked_x, dim=1).values # batch_size, gcn_hidden_size
