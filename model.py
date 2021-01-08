@@ -107,13 +107,13 @@ class RBERT(BertPreTrainedModel):
             self.attention_layers_conv = list(range(self.args.first_layer_conv, self.args.last_layer_conv+1))
             self.attention_layers_conv_count = len(self.attention_layers_conv)
             # conv layers: array of num_hops arrays of attention_layers_conv_count conv layers
-            self.conv_layers = [
-                [
+            self.conv_layers = nn.ModuleList([
+                nn.ModuleList([
                     GCLayer(self.args.gcn_hidden_size, self.args.gcn_hidden_size, config.num_attention_heads, self.args.dropout_rate)
                     for _ in range(self.attention_layers_conv_count)
-                ]
+                ])
                 for _ in range(self.args.num_hops)
-            ]
+            ])
             # TODO: parameterize which hidden state layers are used for final classification (or use tensors of ones)
             label_classifier_input_size = self.args.gcn_hidden_size*2
 
@@ -327,6 +327,9 @@ class RBERT(BertPreTrainedModel):
                 for i_attention_layer in range(self.attention_layers_conv_count):
                     grap_batch = grap_batches[i_attention_layer]
                     x, edge_index, edge_attr = grap_batch.x, grap_batch.edge_index, grap_batch.edge_attr
+                    print('x.device', x.device)
+                    print('edge_index.device', edge_index.device)
+                    print('edge_attr.device', edge_attr.device)
                     # x: batch_size*2*max_seq_length, gcn_hidden_size
                     # edge_index: 2, batch_size*max_seq_length*max_seq_length (*2 if self.args.conv_use_symetric_relations)
                     # edge_attr: batch_size*max_seq_length*max_seq_length (*2 if self.args.conv_use_symetric_relations), heads_count
