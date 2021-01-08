@@ -275,7 +275,8 @@ class RBERT(BertPreTrainedModel):
             batch_size = attentions.shape[1]
 
             # TODO? use actual values from outputs['hidden_states']
-            xs = torch.ones(batch_size,self.attention_layers_conv_count+1, self.args.max_seq_length, self.args.gcn_hidden_size) # batch_size, attention_layers_conv_count+1, max_seq_length, gcn_hidden_size
+            xs = torch.ones(batch_size,self.attention_layers_conv_count+1, self.args.max_seq_length, self.args.gcn_hidden_size) \
+                        .to(attentions.device) # batch_size, attention_layers_conv_count+1, max_seq_length, gcn_hidden_size
 
             # list of attention_layers_conv_count batches
             grap_batches = []
