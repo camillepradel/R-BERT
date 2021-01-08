@@ -291,9 +291,11 @@ class RBERT(BertPreTrainedModel):
                     attending_tokens = torch.arange(0,
                                                     self.args.max_seq_length,
                                                     1.0/self.args.max_seq_length) \
-                                                    .type(torch.LongTensor) # max_seq_length*max_seq_length
+                                                    .type(torch.LongTensor) \
+                                                    .to(attentions.device) # max_seq_length*max_seq_length
                     attended_tokens = torch.arange(self.args.max_seq_length) \
                                         .type(torch.LongTensor) \
+                                        .to(attentions.device) \
                                         .repeat(self.args.max_seq_length) # max_seq_length*max_seq_length
                     if self.args.conv_use_symetric_relations:
                         from_nodes = torch.cat((attending_tokens, attended_tokens))
