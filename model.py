@@ -106,13 +106,16 @@ class RBERT(BertPreTrainedModel):
         elif args.use_gcn:
             self.attention_layers_conv = list(range(self.args.first_layer_conv, self.args.last_layer_conv+1))
             self.attention_layers_conv_count = len(self.attention_layers_conv)
-            self.gcn_hidden_size = config.hidden_size # TODO? could be a different size
-            edge_features_count = config.num_attention_heads*self.attention_layers_conv_count
-            self.conv_layer_1 = GCLayer(self.gcn_hidden_size, self.gcn_hidden_size, edge_features_count, self.args.dropout_rate)
-            self.conv_layer_2 = GCLayer(self.gcn_hidden_size, self.gcn_hidden_size, edge_features_count, self.args.dropout_rate)
-            self.conv_layer_3 = GCLayer(self.gcn_hidden_size, self.gcn_hidden_size, edge_features_count, self.args.dropout_rate)
+            # conv layers: array of num_hops arrays of attention_layers_conv_count conv layers
+            self.conv_layers = [
+                [
+                    GCLayer(self.args.gcn_hidden_size, self.args.gcn_hidden_size, config.num_attention_heads, self.args.dropout_rate)
+                    for _ in range(self.attention_layers_conv_count)
+                ]
+                for _ in range(self.args.num_hops)
+            ]
             # TODO: parameterize which hidden state layers are used for final classification (or use tensors of ones)
-            label_classifier_input_size = self.gcn_hidden_size*2
+            label_classifier_input_size = self.args.gcn_hidden_size*2
 
         self.label_classifier = FCLayer(
             label_classifier_input_size,
@@ -196,7 +199,7 @@ class RBERT(BertPreTrainedModel):
     def forward(self, input_ids, attention_mask, token_type_ids, labels, e1_mask, e2_mask):
         outputs = self.bert(
             input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids,
-            return_dict=True, output_attentions=True, output_hidden_states=self.args.use_gcn
+            return_dict=True, output_attentions=True, output_hidden_states=False, #self.args.use_gcn
         )  # sequence_output, pooled_output, (hidden_states), (attentions)
 
 
@@ -264,60 +267,69 @@ class RBERT(BertPreTrainedModel):
                 label_classifier_input = torch.cat((label_classifier_input, pooled_attentions_d2), 1)
 
         elif self.args.use_gcn:
-            # build network using attention heads
+            # build network using attention heads (one per attention layer)
             attentions = attentions[self.attention_layers_conv] # attention_layers_conv_count, batch_size, heads_count, max_seq_length, max_seq_length
             if self.args.conv_detach_attentions:
                 attentions = attentions.detach() # do not back propagate gradient
 
-            hidden_states = outputs['hidden_states'] # tuple of layers_count+1 tensors
-                                                     # each tensor is of shape batch_size, max_seq_length, hidden_size
-            hidden_states = hidden_states[self.args.last_layer_conv+1] # batch_size, max_seq_length, hidden_size
+            batch_size = attentions.shape[1]
 
-            data_list = []
-            for i_example in range(attentions.shape[1]):
-                x = hidden_states[i_example] # max_seq_length, gcn_hidden_size
+            # TODO? use actual values from outputs['hidden_states']
+            xs = torch.ones(batch_size,self.attention_layers_conv_count+1, self.args.max_seq_length, self.args.gcn_hidden_size) # batch_size, attention_layers_conv_count+1, max_seq_length, gcn_hidden_size
 
-                # TODO: attending_tokens, attended_tokens and edge_index could be built once and for all
-                attending_tokens = torch.arange(0,
-                                                self.args.max_seq_length,
-                                                1.0/self.args.max_seq_length) \
-                                                .type(torch.LongTensor) # max_seq_length*max_seq_length
-                attended_tokens = torch.arange(self.args.max_seq_length) \
-                                    .type(torch.LongTensor) \
-                                    .repeat(self.args.max_seq_length) # max_seq_length*max_seq_length
-                if self.args.conv_use_symetric_relations:
-                    from_nodes = torch.cat((attending_tokens, attended_tokens))
-                    to_nodes = torch.cat((attended_tokens, attending_tokens))
-                else:
-                    from_nodes = attending_tokens
-                    to_nodes = attended_tokens
-                edge_index = torch.cat(
-                    (
-                        from_nodes.unsqueeze(0),
-                        to_nodes.unsqueeze(0),
-                    ), 0).to(attentions.device) # 2, max_seq_length*max_seq_length (*2 if self.args.conv_use_symetric_relations)
-                
-                example_attentions = attentions[:, i_example] # attention_layers_conv_count, heads_count, max_seq_length, max_seq_length
-                example_attentions = example_attentions.permute(2, 3, 0, 1) # max_seq_length, max_seq_length, attention_layers_conv_count, heads_count
-                edge_attr = example_attentions.reshape(-1, self.num_attention_heads*self.attention_layers_conv_count) # max_seq_length*max_seq_length, heads_count*attention_layers_conv_count
-                if self.args.conv_use_symetric_relations:
-                    edge_attr=edge_attr.repeat(2, 1)
-                
-                data = Data(x=x, edge_index=edge_index, edge_attr=edge_attr)
-                data_list.append(data)
-                # TODO: add relations {next,previous,above,below}_token + symetric attention relations
+            # list of attention_layers_conv_count batches
+            grap_batches = []
 
-            grap_batch = Batch.from_data_list(data_list)
+            for i_attention_layer in range(self.attention_layers_conv_count):
+                data_list = []
 
-            x, edge_index, edge_attr = grap_batch.x, grap_batch.edge_index, grap_batch.edge_attr
-            # x: max_seq_length*batch_size, gcn_hidden_size
-            # edge_index: 2, max_seq_length*max_seq_length*batch_size (*2 if self.args.conv_use_symetric_relations)
-            # edge_attr: max_seq_length*max_seq_length*batch_size (*2 if self.args.conv_use_symetric_relations), heads_count
-            x = self.conv_layer_1(x=x, edge_index=edge_index, edge_attr=edge_attr) # max_seq_length*batch_size, gcn_hidden_size
-            x = self.conv_layer_2(x=x, edge_index=edge_index, edge_attr=edge_attr) # max_seq_length*batch_size, gcn_hidden_size
-            x = self.conv_layer_3(x=x, edge_index=edge_index, edge_attr=edge_attr) # *max_seq_length*batch_size, gcn_hidden_size
+                for i_example in range(batch_size):
+                    x = xs[i_example, i_attention_layer:i_attention_layer+2].reshape(-1, self.args.gcn_hidden_size) # 2*max_seq_length, gcn_hidden_size
 
-            x = x.reshape(-1, self.args.max_seq_length, self.gcn_hidden_size) # batch_size, max_seq_length, gcn_hidden_size
+                    # TODO: attending_tokens, attended_tokens and edge_index could be built once and for all
+                    attending_tokens = torch.arange(0,
+                                                    self.args.max_seq_length,
+                                                    1.0/self.args.max_seq_length) \
+                                                    .type(torch.LongTensor) # max_seq_length*max_seq_length
+                    attended_tokens = torch.arange(self.args.max_seq_length) \
+                                        .type(torch.LongTensor) \
+                                        .repeat(self.args.max_seq_length) # max_seq_length*max_seq_length
+                    if self.args.conv_use_symetric_relations:
+                        from_nodes = torch.cat((attending_tokens, attended_tokens))
+                        to_nodes = torch.cat((attended_tokens, attending_tokens))
+                    else:
+                        from_nodes = attending_tokens
+                        to_nodes = attended_tokens
+                    edge_index = torch.cat(
+                        (
+                            from_nodes.unsqueeze(0),
+                            to_nodes.unsqueeze(0),
+                        ), 0).to(attentions.device) # 2, max_seq_length*max_seq_length (*2 if self.args.conv_use_symetric_relations)
+                    
+                    example_attentions = attentions[i_attention_layer, i_example] # heads_count, max_seq_length, max_seq_length
+                    example_attentions = example_attentions.permute(1, 2, 0) # max_seq_length, max_seq_length, heads_count
+                    edge_attr = example_attentions.reshape(-1, self.num_attention_heads) # max_seq_length*max_seq_length, heads_count
+                    if self.args.conv_use_symetric_relations:
+                        edge_attr=edge_attr.repeat(2, 1)
+                    
+                    data = Data(x=x, edge_index=edge_index, edge_attr=edge_attr)
+                    data_list.append(data)
+                    # TODO: add relations {next,previous,above,below}_token + symetric attention relations
+
+                grap_batch = Batch.from_data_list(data_list)
+                grap_batches.append(grap_batch)
+
+            # pass forward conv layers
+            for i_hop in range(self.args.num_hops):
+                for i_attention_layer in range(self.attention_layers_conv_count):
+                    grap_batch = grap_batches[i_attention_layer]
+                    x, edge_index, edge_attr = grap_batch.x, grap_batch.edge_index, grap_batch.edge_attr
+                    # x: batch_size*2*max_seq_length, gcn_hidden_size
+                    # edge_index: 2, batch_size*max_seq_length*max_seq_length (*2 if self.args.conv_use_symetric_relations)
+                    # edge_attr: batch_size*max_seq_length*max_seq_length (*2 if self.args.conv_use_symetric_relations), heads_count
+                    x = self.conv_layers[i_hop][i_attention_layer](x=x, edge_index=edge_index, edge_attr=edge_attr) # batch_size*max_seq_length, gcn_hidden_size
+
+            x = xs[:, -1] # batch_size, max_seq_length, gcn_hidden_size
             e1_mask = e1_mask.unsqueeze(2) # batch_size, max_seq_length, 1
             e1_masked_x = x * e1_mask # batch_size, max_seq_length, gcn_hidden_size
             e1_output = torch.max(e1_masked_x, dim=1).values # batch_size, gcn_hidden_size

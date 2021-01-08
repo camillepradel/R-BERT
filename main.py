@@ -202,12 +202,18 @@ class ModelArguments:
             "help": "The index of the highest layer whose attention heads will be used in Convolutional Graph Network"
         },
     )
-    # gcn_hidden_size: int = field(
-    #     default=200,
-    #     metadata={
-    #         "help": ""
-    #     },
-    # )
+    num_hops: int = field(
+        default=3,
+        metadata={
+            "help": ""
+        },
+    )
+    gcn_hidden_size: int = field(
+        default=200,
+        metadata={
+            "help": ""
+        },
+    )
     conv_detach_attentions: bool = field(
         default=False,
         metadata={
