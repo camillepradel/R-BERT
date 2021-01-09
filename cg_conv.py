@@ -4,7 +4,7 @@ from torch_geometric.typing import PairTensor, Adj, OptTensor, Size
 import torch
 from torch import Tensor
 import torch.nn.functional as F
-from torch.nn import Linear, BatchNorm1d
+from torch.nn import Bilinear, BatchNorm1d
 from torch_geometric.nn.conv import MessagePassing
 
 
@@ -51,15 +51,14 @@ class CGConv(MessagePassing):
         if isinstance(channels, int):
             channels = (channels, channels)
 
-        self.lin_f = Linear(sum(channels) + dim, channels[1], bias=bias)
-        self.lin_s = Linear(sum(channels) + dim, channels[1], bias=bias)
+        self.bilinear = Bilinear(dim, channels[0], channels[1], bias=bias)
+        self.factor = dim * channels[0] * channels[1]
         self.bn = BatchNorm1d(channels[1])
 
         self.reset_parameters()
 
     def reset_parameters(self):
-        self.lin_f.reset_parameters()
-        self.lin_s.reset_parameters()
+        self.bilinear.reset_parameters()
         self.bn.reset_parameters()
 
     def forward(self, x: Union[Tensor, PairTensor], edge_index: Adj,
@@ -74,12 +73,8 @@ class CGConv(MessagePassing):
         out += x[1]
         return out
 
-    def message(self, x_i, x_j, edge_attr: OptTensor) -> Tensor:
-        if edge_attr is None:
-            z = torch.cat([x_i, x_j], dim=-1)
-        else:
-            z = torch.cat([x_i, x_j, edge_attr], dim=-1)
-        return self.lin_f(z).sigmoid() * F.softplus(self.lin_s(z))
+    def message(self, x_j, edge_attr: Tensor) -> Tensor:
+        return 1.0/self.factor * self.bilinear(edge_attr, x_j)
 
     def __repr__(self):
         return '{}({}, dim={})'.format(self.__class__.__name__, self.channels,
