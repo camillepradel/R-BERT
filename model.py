@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from transformers import BertModel, BertPreTrainedModel
 from torch_geometric.data import Data, Batch
-from torch_geometric.nn import CGConv # GCNConv
+from cg_conv import CGConv
 
 from label_smoothing_loss import LabelSmoothingCrossEntropy
 
